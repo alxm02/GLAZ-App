@@ -169,6 +169,60 @@ function aktuellesProfil() {
   return zustand.profile[zustand.aktivesProfil] || zustand.profile[0];
 }
 
+/**
+ * Beschriftung eines Profils in der Auswahlliste.
+ *
+ * Einzige Quelle fuer diesen Text -- dasselbe Vorgehen wie in
+ * ``Profile.anzeige_label`` der Desktop-App: ohne eigenen Namen tritt der
+ * Personenname ein. Wichtig ist, dass wirklich alle Stellen ihn hierher
+ * holen; sonst heisst ein Profil in der Liste "Erika Mustermann", seine Kopie
+ * aber "Profil (Kopie)", und niemand versteht, woher das kommt.
+ */
+function profilLabel(p) {
+  return (
+    (p.name || "").trim() ||
+    `${p.vorname} ${p.nachname}`.trim() ||
+    "(ohne Namen)"
+  );
+}
+
+/**
+ * Sorgt dafuer, dass kein zweites Profil denselben Namen traegt.
+ *
+ * Zwei gleich benannte Eintraege in der Auswahlliste sind schlimmer als ein
+ * unschoener Name: Man kann sie nicht auseinanderhalten und waehlt frueher
+ * oder spaeter das falsche Profil. Angehaengt wird deshalb " (2)", " (3)" und
+ * so fort -- dieselbe Regel, die die Desktop-App in
+ * ``glaz/settings.py`` anwendet. (Bewusst nachgebaut statt von dort geholt:
+ * Die Profile der Handy-Fassung leben im localStorage und begegnen denen der
+ * Desktop-App nie, es gibt also nichts, was auseinanderlaufen koennte.)
+ *
+ * Ein leerer Name bleibt leer -- dafuer tritt in der Liste der Personenname
+ * ein, genau wie in ``Profile.anzeige_label``.
+ *
+ * @param {string} wunsch       gewuenschter Name
+ * @param {number} eigenerIndex Platz des Profils, das umbenannt wird (-1 fuer
+ *                              ein noch nicht eingefuegtes)
+ */
+function eindeutigerProfilname(wunsch, eigenerIndex) {
+  const name = (wunsch || "").trim();
+  if (!name) return "";
+
+  const vergeben = new Set(
+    zustand.profile
+      .filter((_, i) => i !== eigenerIndex)
+      .map((p) => (p.name || "").trim())
+      .filter(Boolean)
+  );
+  if (!vergeben.has(name)) return name;
+
+  for (let n = 2; n < 1000; n++) {
+    const versuch = `${name} (${n})`;
+    if (!vergeben.has(versuch)) return versuch;
+  }
+  return name;
+}
+
 /** Der Vorgang in genau der Form, die glaz/portabel.py erwartet. */
 function vorgangDict() {
   const p = aktuellesProfil() || LEERES_PROFIL;
@@ -412,21 +466,27 @@ function zeichneProfil() {
   zustand.profile.forEach((p, i) => {
     const eintrag = document.createElement("option");
     eintrag.value = String(i);
-    eintrag.textContent =
-      (p.name || "").trim() ||
-      `${p.vorname} ${p.nachname}`.trim() ||
-      "(ohne Namen)";
+    eintrag.textContent = profilLabel(p);
     auswahl.append(eintrag);
   });
   auswahl.value = String(zustand.aktivesProfil);
 
   const p = aktuellesProfil();
-  el("f-vorname").value = p.vorname;
-  el("f-nachname").value = p.nachname;
-  el("f-personalnummer").value = p.personalnummer;
-  el("f-abteilung").value = p.abteilung;
-  el("f-gl-name").value = p.gruppenleiter_name;
-  el("f-gl-email").value = p.gruppenleiter_email;
+  // Nur zuweisen, wenn sich der Wert wirklich unterscheidet: Eine Zuweisung an
+  // .value setzt in mehreren Browsern den Schreibcursor ans Ende. Beim Tippen
+  // am Zeilenende faellt das nicht auf, beim Korrigieren mitten im Wort sehr
+  // wohl -- und diese Funktion laeuft nach jedem Tastendruck.
+  const setzeWenn = (id, wert) => {
+    const feld = el(id);
+    if (feld.value !== wert) feld.value = wert;
+  };
+  setzeWenn("f-profilname", p.name);
+  setzeWenn("f-vorname", p.vorname);
+  setzeWenn("f-nachname", p.nachname);
+  setzeWenn("f-personalnummer", p.personalnummer);
+  setzeWenn("f-abteilung", p.abteilung);
+  setzeWenn("f-gl-name", p.gruppenleiter_name);
+  setzeWenn("f-gl-email", p.gruppenleiter_email);
 
   const teile = [];
   const person = `${p.vorname} ${p.nachname}`.trim();
@@ -1015,6 +1075,7 @@ function verdrahte() {
   });
 
   const profilFeldpaare = [
+    ["f-profilname", "name"],
     ["f-vorname", "vorname"],
     ["f-nachname", "nachname"],
     ["f-personalnummer", "personalnummer"],
@@ -1031,18 +1092,55 @@ function verdrahte() {
     });
   }
 
+  // Eindeutigkeit erst beim Verlassen des Feldes herstellen, nicht bei jedem
+  // Tastendruck: Wer "Montage" tippen will, soll nicht nach dem ersten
+  // Buchstaben ein "M (2)" vorgesetzt bekommen, weil ein "M (2)" schon
+  // existiert.
+  el("f-profilname").addEventListener("change", () => {
+    const profil = aktuellesProfil();
+    profil.name = eindeutigerProfilname(profil.name, zustand.aktivesProfil);
+    zeichneProfil();
+    speichern();
+  });
+
+  /** Oeffnet den Profilbereich und setzt den Schreibcursor in das Namensfeld. */
+  function zeigeProfilfelder(mitFokus) {
+    const felder = el("profil-felder");
+    felder.hidden = false;
+    el("knopf-profil-auf").setAttribute("aria-expanded", "true");
+    el("knopf-profil-auf").textContent = "Fertig";
+    if (mitFokus) {
+      const feld = el("f-profilname");
+      feld.focus();
+      feld.select();
+    }
+  }
+
   el("knopf-profil-neu").addEventListener("click", () => {
-    zustand.profile.push({ ...LEERES_PROFIL, name: `Profil ${zustand.profile.length + 1}` });
+    // Ein frisches Profil braucht als Erstes einen Namen — deshalb klappt der
+    // Bereich auf und der Cursor steht bereits im richtigen Feld. Der
+    // Vorschlag ist vorausgewaehlt, sodass Tippen ihn ersetzt.
+    zustand.profile.push({
+      ...LEERES_PROFIL,
+      name: eindeutigerProfilname(`Profil ${zustand.profile.length + 1}`, -1),
+    });
     zustand.aktivesProfil = zustand.profile.length - 1;
     zeichneProfil();
+    zeigeProfilfelder(true);
     nachEingabe();
   });
 
   el("knopf-profil-duplizieren").addEventListener("click", () => {
     const quelle = aktuellesProfil();
-    zustand.profile.push({ ...quelle, name: `${quelle.name || "Profil"} (Kopie)` });
+    zustand.profile.push({
+      ...quelle,
+      // Von der sichtbaren Beschriftung ausgehen, nicht vom internen Feld:
+      // Sonst wird aus der Kopie von "Erika Mustermann" ein "Profil (Kopie)".
+      name: eindeutigerProfilname(`${profilLabel(quelle)} (Kopie)`, -1),
+    });
     zustand.aktivesProfil = zustand.profile.length - 1;
     zeichneProfil();
+    zeigeProfilfelder(true);
     nachEingabe();
   });
 

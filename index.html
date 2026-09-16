@@ -68,6 +68,14 @@
     <p class="zusammenfassung" id="profil-zusammenfassung">Noch kein Profil angelegt.</p>
 
     <div class="felder" id="profil-felder" hidden>
+      <!-- Der Profilname steht oben, weil er das Profil in der Auswahlliste
+           vertritt: Wer mehrere pflegt, sucht zuerst danach. Leer lassen ist
+           erlaubt — dann tritt der Personenname an seine Stelle. -->
+      <label class="feld">
+        <span>Name dieses Profils</span>
+        <input type="text" id="f-profilname" enterkeyhint="next"
+               placeholder="z. B. Montage Inland">
+      </label>
       <label class="feld feld-halb">
         <span>Vorname</span>
         <input type="text" id="f-vorname" autocomplete="given-name" enterkeyhint="next">

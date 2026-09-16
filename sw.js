@@ -8,7 +8,7 @@
  * beim ersten Besuch JEDE Datei der App in den Cache und bedient danach jede
  * Anfrage aus diesem Cache.
  *
- * ACHTUNG: Diese Datei ist eine Vorlage. Die Platzhalter 1.1.0+6d6711a739 und
+ * ACHTUNG: Diese Datei ist eine Vorlage. Die Platzhalter 1.1.0+df0d1ac078 und
  * [
   "./",
   "./index.html",
@@ -49,7 +49,7 @@
  */
 
 /** Versionsstempel aus version.json: Anwendungsversion + Inhaltskuerzel. */
-const VERSION = "1.1.0+6d6711a739";
+const VERSION = "1.1.0+df0d1ac078";
 
 /*
  * Der Cache-Name traegt die Version. Dadurch legt jeder neue Build einen
