@@ -81,34 +81,87 @@
   --sicher-links: env(safe-area-inset-left, 0px);
   --sicher-rechts: env(safe-area-inset-right, 0px);
 
-  color-scheme: dark light;
+  /* dark, nicht "dark light": die vom Browser gezeichneten Bedienteile —
+     Datums- und Zeitwaehler, Bildlaufleisten — sollen dem gewaehlten
+     Erscheinungsbild folgen, nicht dem Geraet. Ein heller Zeitwaehler auf
+     dunklem Grund sieht auf dem iPhone aus wie ein Fehler. */
+  color-scheme: dark;
 }
 
-/* Heller Modus: bewusst ohne Glaseffekt. Der lebt vom dunklen Grund; auf
-   Weiss wird aus der Lichtkante ein schmutziger Rand. Statt Transparenzen
-   tragen hier klare Flaechen und ein feiner Rahmen die Gliederung. */
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg-tief: #EEF2F7;
-    --bg: #F7F9FC;
-    --bg-sanft: #FFFFFF;
-    --bg-erhaben: #FFFFFF;
-    --rand-zart: #DCE4EE;
-    --rand: #C3D0E0;
-    --glas-rand: #DCE4EE;
-    --glas-kante: transparent;
-    --akzent: #0089A0;
-    --akzent-hover: #00A0BB;
-    --akzent-schwach: rgba(0, 137, 160, 0.10);
-    --auf-akzent: #FFFFFF;
-    --text: #0B1B2E;
-    --text-zweit: #3E5770;
-    --text-schwach: #6B8299;
-    --erfolg: #1E8E3E;
-    --fehler: #C5221F;
-    --warnung: #A8630A;
-    --info: #1A5FA8;
-  }
+/* --------------------------------------------------------------------------
+   Das Erscheinungsbild ist eine Entscheidung dieser Anwendung, keine des
+   Geraets. Frueher hing die helle Palette an einer @media-Abfrage nach der
+   Farbvorliebe des Systems; dieser Block ist ersatzlos entfallen — auch als
+   Wortlaut, denn tests/test_web_tokens.py verbietet ihn. Die Einstellung des
+   Telefons sagt, wie der Nutzer sein Telefon mag — sie sagt nichts darueber,
+   wie diese Anwendung auszusehen hat. Und die Gestaltung ist auf den dunklen
+   Grund hin entworfen: der Glas-Eindruck (siehe docs/Design-Konzept.md)
+   entsteht erst ueber einer tiefen Flaeche, auf Weiss wird aus der Lichtkante
+   ein schmutziger Rand. Wer hell will, waehlt es jetzt ausdruecklich.
+
+   web/app.js setzt dazu <html data-thema="dunkel"> bzw. "hell"; die Vorgabe
+   ist dunkel. Die dunkle Palette steht zusaetzlich auf dem nackten :root,
+   damit sie schon greift, bevor JavaScript gelaufen ist — sonst blitzt beim
+   Start kurz Weiss auf, und das faellt auf einem Telefon am staerksten auf.
+   -------------------------------------------------------------------------- */
+
+/* Dieselben Werte wie oben, hier aber am Attribut. Ohne diesen Block liesse
+   sich von "hell" nicht wieder nach "dunkel" zurueckschalten: die Regel fuer
+   hell ist staerker als das nackte :root und behielte die Oberhand. */
+:root[data-thema="dunkel"] {
+  --bg-tief: #060E1A;
+  --bg: #091526;
+  --bg-sanft: #0D1E35;
+  --bg-erhaben: #122540;
+
+  --rand-zart: #14223A;
+  --rand: #1C2E47;
+
+  --glas-rand: rgba(255, 255, 255, 0.055);
+  --glas-kante: rgba(255, 255, 255, 0.10);
+
+  --akzent: #00BEDC;
+  --akzent-hover: #00D4F4;
+  --akzent-schwach: rgba(0, 190, 220, 0.12);
+  --auf-akzent: #060E1A;
+
+  --text: #F2F6FC;
+  --text-zweit: #AFC6DA;
+  --text-schwach: #7593AE;
+
+  --erfolg: #32D74B;
+  --fehler: #FF453A;
+  --warnung: #FF9F0A;
+  --info: #4A90D9;
+
+  color-scheme: dark;
+}
+
+/* Heller Modus: bewusst ohne Glaseffekt. Statt Transparenzen tragen hier
+   klare Flaechen und ein feiner Rahmen die Gliederung. Inhaltlich dieselben
+   Werte wie zuvor im @media-Block — nur der Ausloeser ist ein anderer. */
+:root[data-thema="hell"] {
+  --bg-tief: #EEF2F7;
+  --bg: #F7F9FC;
+  --bg-sanft: #FFFFFF;
+  --bg-erhaben: #FFFFFF;
+  --rand-zart: #DCE4EE;
+  --rand: #C3D0E0;
+  --glas-rand: #DCE4EE;
+  --glas-kante: transparent;
+  --akzent: #0089A0;
+  --akzent-hover: #00A0BB;
+  --akzent-schwach: rgba(0, 137, 160, 0.10);
+  --auf-akzent: #FFFFFF;
+  --text: #0B1B2E;
+  --text-zweit: #3E5770;
+  --text-schwach: #6B8299;
+  --erfolg: #1E8E3E;
+  --fehler: #C5221F;
+  --warnung: #A8630A;
+  --info: #1A5FA8;
+
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -266,6 +319,26 @@ code {
   color: var(--text-schwach);
 }
 
+/* Die Wahl des Erscheinungsbilds. Die Beschriftung steht ueber dem
+   Umschalter, nicht daneben: das Menue ist 280 px breit, davon gehen 12 px
+   Innenabstand je Seite ab. Nebeneinander blieben je Knopf rund 80 px — zu
+   wenig, um "Dunkel" und "Hell" mit ehrlicher Tippflaeche zu zeigen.
+   Untereinander bekommt jeder Knopf die halbe Menuebreite. */
+.menue-thema {
+  display: grid;
+  gap: 7px;
+  margin-top: 4px;
+  padding: 10px 12px 4px;
+  border-top: 1px solid var(--rand-zart);
+}
+.menue-thema > span {
+  font-size: var(--fs-xs);
+  color: var(--text-schwach);
+}
+/* Hier 44 statt der 38 px, die .umschalter sonst gibt: im Menue wird mit dem
+   Daumen getippt, und das ist Apples Mindestmass fuer eine Tippflaeche. */
+.menue-thema .umschalter button { min-height: var(--tippflaeche); }
+
 /* --------------------------------------------------------------------------
    Bloecke: Gliederung durch Weissraum und eine Haarlinie, keine Karten.
    Das ist der Kern des bestehenden Design-Konzepts und bleibt hier gueltig.
@@ -297,6 +370,19 @@ main { padding: 0 16px; }
   font-size: var(--fs-sm);
   color: var(--text-schwach);
 }
+/* Hervorhebung ueber die Helligkeit, nicht ueber die Schriftlage. Der
+   Fliesstext steht in --text-schwach; --text hebt die Frage so weit heraus,
+   dass sie als Ueberschrift ihrer eigenen Antwort lesbar wird. Kursiv faellt
+   dabei ausdruecklich weg: bei 13 px auf einem Telefonbildschirm kostet die
+   Schraeglage mehr Lesbarkeit, als die Auszeichnung einbringt — dieselbe
+   Entscheidung wie bei .anstupser-weg em. */
+/* Der Fehlerzaehler am Blockkopf traegt dieselbe Systematik wie die
+   meldenden Textstellen -- sonst ist "2 Angaben fehlen" so leise wie "3 von
+   14", und genau das soll es nicht sein. */
+.zaehler[data-schwere="fehler"] { color: var(--fehler); }
+
+.zusammenfassung strong { color: var(--text); }
+.zusammenfassung em { font-style: normal; color: var(--text); }
 .dateiname {
   color: var(--text-zweit);
   word-break: break-all;
@@ -401,6 +487,16 @@ input[data-warnung="true"] { border-color: var(--warnung); }
 }
 .textknopf-warnend { color: var(--fehler); }
 
+/* In einer eigenen Aktionsreihe sind Textknoepfe das einzige Ziel weit und
+   breit -- dort bekommen sie die volle Tippflaeche. Im Blockkopf bleiben sie
+   bei 34 px, weil sie dort an einer Ueberschrift haengen und ein hoeherer
+   Knopf die Zeile auseinanderzoege. */
+.feld-aktionen .textknopf,
+.zeilen-aktionen .textknopf {
+  min-height: var(--tippflaeche);
+  padding: 0 10px;
+}
+
 .knopf-zweit {
   min-height: var(--tippflaeche);
   padding: 0 16px;
@@ -434,7 +530,11 @@ input[data-warnung="true"] { border-color: var(--warnung); }
 }
 .umschalter-drei { grid-template-columns: repeat(3, 1fr); }
 .umschalter button {
-  min-height: 38px;
+  /* 44 statt 38: Apples Mass fuer eine Daumenflaeche. Die sechs Pixel kosten
+     kaum Hoehe, machen aber den Unterschied zwischen "getroffen" und
+     "danebengetippt" -- und diese Umschalter entscheiden ueber Reisetyp und
+     Ausgabemodus, also ueber den Inhalt der erzeugten Datei. */
+  min-height: var(--tippflaeche);
   font: inherit;
   font-size: var(--fs-sm);
   color: var(--text-schwach);
@@ -595,7 +695,7 @@ input[data-warnung="true"] { border-color: var(--warnung); }
   margin-top: 12px;
 }
 .tag-aktionen button {
-  min-height: 38px;
+  min-height: var(--tippflaeche);
   padding: 0 13px;
   font: inherit;
   font-size: var(--fs-sm);
@@ -636,9 +736,17 @@ input[data-warnung="true"] { border-color: var(--warnung); }
   color: var(--text-schwach);
   min-height: 1.45em;
 }
-.leiste-meldung[data-schwere="fehler"] { color: var(--fehler); }
-.leiste-meldung[data-schwere="warnung"] { color: var(--warnung); }
-.leiste-meldung[data-schwere="erfolg"] { color: var(--erfolg); }
+/* Zwei Stellen melden einen Zustand: die Meldung der Aktionsleiste und der
+   Hinweis unter den Profilfeldern, der nach dem Sichern bestaetigt und sich
+   dann selbst zuruecknimmt. Beide in einer Regel, damit die drei Farben nicht
+   an zwei Orten gepflegt werden muessen und keine davonlaufen kann. Ohne
+   data-schwere bleibt .zusammenfassung wie bisher in --text-schwach. */
+.leiste-meldung[data-schwere="fehler"],
+.zusammenfassung[data-schwere="fehler"] { color: var(--fehler); }
+.leiste-meldung[data-schwere="warnung"],
+.zusammenfassung[data-schwere="warnung"] { color: var(--warnung); }
+.leiste-meldung[data-schwere="erfolg"],
+.zusammenfassung[data-schwere="erfolg"] { color: var(--erfolg); }
 
 .knopf-haupt {
   width: 100%;

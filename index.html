@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="de" data-thema="dunkel">
 <head>
 <meta charset="utf-8">
 <!-- viewport-fit=cover: ohne das bleibt auf dem iPhone unter der Notch und
@@ -23,6 +23,27 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192">
 <link rel="stylesheet" href="app.css">
+
+<!-- Das Erscheinungsbild MUSS vor dem ersten Zeichnen feststehen. Setzte es
+     erst app.js, blitzte beim Start fuer einen Sekundenbruchteil die falsche
+     Palette auf -- auf einem Telefon der auffaelligste aller Schoenheitsfehler.
+     Deshalb dieses kurze Stueck hier im Kopf und nicht unten bei der uebrigen
+     Logik. Vorgabe ist dunkel: Die Gestaltung ist darauf hin entworfen (siehe
+     docs/Design-Konzept.md), und die Systemeinstellung des Telefons sagt
+     nichts darueber, wie diese Anwendung aussehen soll. -->
+<script>
+(function () {
+  var thema = "dunkel";
+  try {
+    var roh = localStorage.getItem("glaz.zustand.v1");
+    if (roh) {
+      var gewaehlt = (JSON.parse(roh).einstellungen || {}).thema;
+      if (gewaehlt === "hell" || gewaehlt === "dunkel") thema = gewaehlt;
+    }
+  } catch (e) { /* gesperrter Speicher: dann eben die Vorgabe */ }
+  document.documentElement.dataset.thema = thema;
+})();
+</script>
 <title>GLAZ-Korrekturbuchungsliste</title>
 </head>
 <body>
@@ -46,6 +67,13 @@
   <button type="button" data-ziel="einstellungen">Einstellungen</button>
   <button type="button" data-ziel="selbsttest">Selbsttest auf diesem Gerät</button>
   <button type="button" data-ziel="neuer-vorgang">Neuer Vorgang</button>
+  <div class="menue-thema">
+    <span>Erscheinungsbild</span>
+    <div class="umschalter" role="radiogroup" aria-label="Erscheinungsbild">
+      <button type="button" role="radio" aria-checked="true"  data-thema="dunkel">Dunkel</button>
+      <button type="button" role="radio" aria-checked="false" data-thema="hell">Hell</button>
+    </div>
+  </div>
   <p class="menue-fuss" id="menue-fuss">Fassung wird geladen …</p>
 </div>
 
@@ -59,6 +87,11 @@
   <section class="block" id="profil-block">
     <div class="block-kopf">
       <h2>Profil</h2>
+      <!-- Die Fehlermarkierungen sitzen an den Feldern, und die sind
+           zugeklappt. Ohne diesen Zaehler bliebe eine fehlende Personalnummer
+           unsichtbar, waehrend der Abschlussknopf gesperrt ist und niemand
+           weiss, warum. -->
+      <span class="zaehler" id="profil-fehlerzahl" hidden></span>
       <button type="button" class="textknopf" id="knopf-profil-auf" aria-expanded="false" aria-controls="profil-felder">Bearbeiten</button>
     </div>
 
@@ -103,11 +136,26 @@
         <span>E-Mail der Gruppenleitung</span>
         <input type="email" id="f-gl-email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" enterkeyhint="done">
       </label>
+      <!-- Die Gruppenleiter-Stammdatenliste baut sich selbst hier hinein
+           (web/gruppenleiter.js) -- derselbe Vorrat, aus dem auch die
+           Desktop-App Name, Abteilung und Adresse uebernimmt. -->
+      <div id="gruppenleiter-halter"></div>
+
       <div class="feld-aktionen">
         <button type="button" class="textknopf" id="knopf-profil-neu">Neues Profil</button>
         <button type="button" class="textknopf" id="knopf-profil-duplizieren">Duplizieren</button>
         <button type="button" class="textknopf textknopf-warnend" id="knopf-profil-loeschen">Löschen</button>
       </div>
+
+      <!-- Gespeichert wird bei jeder Eingabe von selbst. Der Knopf aendert
+           daran nichts -- er beantwortet die Frage "ist das jetzt sicher
+           drin?", die man einer Anwendung ohne Rueckmeldung zu Recht nicht
+           glaubt. Die Desktop-App macht es genauso
+           (_profil_speichern in glaz/ui/main_window.py). -->
+      <div class="feld-aktionen">
+        <button type="button" class="knopf-zweit" id="knopf-profil-speichern">Profil speichern</button>
+      </div>
+      <p class="zusammenfassung" id="profil-hinweis">Änderungen werden sofort im Gerät gesichert.</p>
     </div>
   </section>
 
@@ -142,8 +190,12 @@
     </div>
     <div id="zeilen-liste"></div>
     <div class="zeilen-aktionen">
-      <button type="button" class="knopf-zweit" id="knopf-zeile-neu">Reisetag hinzufügen</button>
-      <button type="button" class="knopf-zweit" id="knopf-folgezeile">Folgezeile</button>
+      <button type="button" class="knopf-zweit" id="knopf-zeile-neu">+ Reisetag</button>
+      <!-- Heisst in der Desktop-App woertlich "+ Rückreise". Vorher stand hier
+           "Folgezeile" -- der Fachbegriff aus der Excel-Vorlage, den beim
+           Erfassen niemand sucht. -->
+      <button type="button" class="knopf-zweit" id="knopf-folgezeile"
+              title="Rückreise-Folgezeile ergänzen (ohne erneutes Datum und Stammdaten)">+ Rückreise</button>
     </div>
     <p class="hinweis" id="arbeitszeit-hinweis" hidden></p>
   </section>
@@ -177,8 +229,21 @@
 
     <label class="schalter">
       <input type="checkbox" id="f-mail-mitsenden" checked>
-      <span>Nach dem Erzeugen ans Teilen-Menü übergeben</span>
+      <span>Mail mitschicken (Teilen-Menü öffnen)</span>
     </label>
+
+    <!-- Die Frage nach dem Speicherort kommt verlaesslich, und die Antwort ist
+         nicht offensichtlich: Eine Webseite darf keinen Ordner auswaehlen --
+         das verbietet der Browser aus gutem Grund. Auf dem Telefon uebernimmt
+         das Teilen-Menue diese Rolle, dort sitzt "In Dateien sichern" mit
+         Ordnerauswahl. Deshalb steht es hier und nicht in einer Anleitung,
+         die niemand liest. -->
+    <p class="zusammenfassung">
+      <strong>Wohin die Datei geht:</strong> Das Teilen-Menü bietet neben den
+      Mail-Apps auch <em>„In Dateien sichern"</em> — dort wählst du den Ordner,
+      auch in OneDrive oder iCloud. Ohne Haken oben wird die Datei stattdessen
+      direkt in den Download-Ordner des Browsers gelegt.
+    </p>
   </section>
 
   <!-- ------------------------------------------------------------------ -->
@@ -266,33 +331,38 @@
     <div class="paare">
       <div class="paar" data-art="passiv">
         <span class="paar-name">Passiv</span>
-        <input type="time" class="zeit" data-feld="passiv_von" aria-label="Passive Reisezeit von">
+        <input type="time" step="900" class="zeit" data-feld="passiv_von" aria-label="Passive Reisezeit von">
         <span class="bis">–</span>
-        <input type="time" class="zeit" data-feld="passiv_bis" aria-label="Passive Reisezeit bis">
+        <input type="time" step="900" class="zeit" data-feld="passiv_bis" aria-label="Passive Reisezeit bis">
       </div>
       <div class="paar" data-art="aktiv">
         <span class="paar-name">Aktiv</span>
-        <input type="time" class="zeit" data-feld="aktiv_von" aria-label="Aktive Reisezeit von">
+        <input type="time" step="900" class="zeit" data-feld="aktiv_von" aria-label="Aktive Reisezeit von">
         <span class="bis">–</span>
-        <input type="time" class="zeit" data-feld="aktiv_bis" aria-label="Aktive Reisezeit bis">
+        <input type="time" step="900" class="zeit" data-feld="aktiv_bis" aria-label="Aktive Reisezeit bis">
       </div>
       <div class="paar" data-art="arbeit">
         <span class="paar-name">Arbeit</span>
-        <input type="time" class="zeit" data-feld="arbeit_von" aria-label="Arbeitszeit von">
+        <input type="time" step="900" class="zeit" data-feld="arbeit_von" aria-label="Arbeitszeit von">
         <span class="bis">–</span>
-        <input type="time" class="zeit" data-feld="arbeit_bis" aria-label="Arbeitszeit bis">
+        <input type="time" step="900" class="zeit" data-feld="arbeit_bis" aria-label="Arbeitszeit bis">
       </div>
       <div class="paar paar-grenze" data-art="grenze" hidden>
         <span class="paar-name">Grenze</span>
-        <input type="time" class="zeit" data-feld="grenz_anreise" aria-label="Grenzübertritt Anreise">
+        <input type="time" step="900" class="zeit" data-feld="grenz_anreise" aria-label="Grenzübertritt Anreise">
         <span class="bis">–</span>
-        <input type="time" class="zeit" data-feld="grenz_rueckreise" aria-label="Grenzübertritt Rückreise">
+        <input type="time" step="900" class="zeit" data-feld="grenz_rueckreise" aria-label="Grenzübertritt Rückreise">
       </div>
     </div>
 
     <ul class="tag-meldungen"></ul>
 
     <div class="tag-aktionen" hidden>
+      <!-- Gegenstueck zur Checkbox, die in der Desktop-App links neben der
+           Zeilennummer sitzt: Eine bestehende Zeile laesst sich damit
+           nachtraeglich zur Rueckreise machen -- und wieder zurueck. Ohne das
+           blieb die Markierung hier unveraenderlich, sobald die Zeile stand. -->
+      <button type="button" data-tat="rueckreise">Als Rückreise markieren</button>
       <button type="button" data-tat="duplizieren">Duplizieren</button>
       <button type="button" data-tat="hoch">Nach oben</button>
       <button type="button" data-tat="runter">Nach unten</button>
@@ -302,6 +372,7 @@
 </template>
 
 <script src="vendor/pyodide/pyodide.js"></script>
+<script src="gruppenleiter.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

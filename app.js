@@ -63,8 +63,13 @@ def bruecke_erzeuge(roh, ziel):
     erg = portabel.erzeuge_xlsx(json.loads(roh), bruecke_vorlage(), ziel)
     return json.dumps(erg, ensure_ascii=False)
 
-def bruecke_ergaenze(roh, pfad):
-    return json.dumps(portabel.ergaenze_xlsx(json.loads(roh), pfad), ensure_ascii=False)
+def bruecke_ergaenze(roh, pfad, start_row=None, ueberschreibe=0):
+    erg = portabel.ergaenze_xlsx(
+        json.loads(roh), pfad,
+        start_row=start_row or None,
+        ueberschreibe_zeilen=int(ueberschreibe or 0),
+    )
+    return json.dumps(erg, ensure_ascii=False)
 
 def bruecke_belegung(pfad):
     return json.dumps(portabel.belegung(pfad), ensure_ascii=False)
@@ -101,6 +106,11 @@ const ZEITFELDER = [
 ];
 
 const MAX_ZEILEN = 14;
+
+//: Ruhetext unter den Profilfeldern. Er sagt, was ohnehin passiert -- und
+//: macht damit den Speichern-Knopf zu einer Bestaetigung statt zu einer
+//: Bedingung.
+const PROFIL_HINWEIS_STANDARD = "Änderungen werden sofort im Gerät gesichert.";
 
 /* --------------------------------------------------------------------------
    Kleine Helfer
@@ -144,6 +154,9 @@ function entprellt(fn, ms) {
 const zustand = {
   profile: [{ ...LEERES_PROFIL, name: "Mein Profil" }],
   aktivesProfil: 0,
+  /* Der Vorrat gepflegter Gruppenleiter -- dasselbe wie die Stammdatenliste
+     der Desktop-App. Verwaltet wird er in web/gruppenleiter.js. */
+  gruppenleiter: [],
   einsatzart: "",
   einsatzarten: [],
   reisetyp: "inland",
@@ -151,16 +164,54 @@ const zustand = {
   zeilen: [],
   modus: "neu",
   mailMitsenden: true,
-  einstellungen: { empfaenger: "", betreff_vorlage: "", body_vorlage: "" },
+  einstellungen: {
+    empfaenger: "",
+    betreff_vorlage: "",
+    body_vorlage: "",
+    /* "dunkel" oder "hell". Vorgabe ist dunkel, weil die Gestaltung darauf
+       hin entworfen ist -- die Systemeinstellung des Telefons sagt nichts
+       darueber, wie diese Anwendung aussehen soll. */
+    thema: "dunkel",
+  },
 };
 
 /* Die gewaehlte Zieldatei lebt absichtlich NICHT im gespeicherten Zustand:
    ein File-Objekt ueberlebt keinen Neustart, und ein Pfad, auf den wir beim
    naechsten Start nicht mehr zugreifen koennen, waere ein leeres Versprechen. */
 let zieldatei = null;
+/* Getrennt von `zieldatei`, weil das File-Objekt schon gewaehlt sein kann,
+   waehrend das Einlesen nach /ziel.xlsx noch laeuft. Die laufende Pruefung
+   darf erst danach darauf zugreifen. */
+let zieldateiGeladen = false;
+/* Was der letzte erfolgreiche Lauf im Modus "Ergaenzen" geschrieben hat.
+   Ohne diese Merker haengt ein zweiter Druck denselben Block ein zweites Mal
+   an -- genau der Schaden, gegen den die Desktop-App ihren
+   Aktualisieren-Zustand hat. */
+let letzterAnhang = null;
+
+/**
+ * Datum, mit dem eine neu angelegte Reisezeile vorbelegt wird.
+ *
+ * Erste Wahl ist der zuletzt eingetragene Tag -- NICHT der Folgetag. Genau so
+ * haelt es ``_vorschlagsdatum`` in der Desktop-App, und das aus gutem Grund:
+ * Ein Reisetag verteilt sich regelmaessig auf mehrere Zeilen (arbeiten,
+ * reisen, arbeiten, reisen passt nicht in eine). Wer dort jedes Mal den
+ * Folgetag vorgesetzt bekommt, verschiebt unbemerkt den Zeitraum -- und der
+ * steht im Dateinamen und im Betreff der Mail.
+ *
+ * Verlaesslich bleibt die Vorbelegung, weil eine Zeile ohne Uhrzeiten nicht
+ * als Datenzeile zaehlt (siehe TravelRow.ist_leer): ein unbeachtetes
+ * Vorschlagsdatum kann weder in die Excel noch in den Zeitraum geraten.
+ */
+function vorschlagsdatum() {
+  for (let i = zustand.zeilen.length - 1; i >= 0; i--) {
+    if (zustand.zeilen[i].datum) return zustand.zeilen[i].datum;
+  }
+  return heuteAlsText();
+}
 
 function leereZeile(folgezeile = false) {
-  const z = { datum: folgezeile ? null : heuteAlsText(), ist_folgezeile: folgezeile };
+  const z = { datum: folgezeile ? null : vorschlagsdatum(), ist_folgezeile: folgezeile };
   for (const f of ZEITFELDER) z[f] = null;
   return z;
 }
@@ -238,10 +289,12 @@ function vorgangDict() {
 function speichern() {
   try {
     localStorage.setItem(SPEICHER_SCHLUESSEL, JSON.stringify(zustand));
+    return true;
   } catch (e) {
     // Voller oder gesperrter Speicher darf die Eingabe nicht abwuergen.
     // Der Nutzer erfaehrt es an der Statuszeile, nicht per Absturz.
     melde("Der Zwischenstand konnte nicht gesichert werden.", "warnung");
+    return false;
   }
 }
 
@@ -280,8 +333,20 @@ function laden() {
     if (typeof gelesen.mailMitsenden === "boolean") {
       zustand.mailMitsenden = gelesen.mailMitsenden;
     }
+    if (Array.isArray(gelesen.gruppenleiter)) {
+      zustand.gruppenleiter = gelesen.gruppenleiter
+        .filter((g) => g && typeof g === "object")
+        .map((g) => ({
+          name: String(g.name || ""),
+          abteilung: String(g.abteilung || ""),
+          email: String(g.email || ""),
+        }));
+    }
     if (gelesen.einstellungen && typeof gelesen.einstellungen === "object") {
       Object.assign(zustand.einstellungen, gelesen.einstellungen);
+      // Ein unbekannter Wert wuerde die Seite unlesbar machen, deshalb hier
+      // und nicht erst beim Anwenden abfangen.
+      if (zustand.einstellungen.thema !== "hell") zustand.einstellungen.thema = "dunkel";
     }
   } catch (e) {
     // Kaputter Speicherinhalt: lieber frisch anfangen als halb geladen
@@ -385,6 +450,12 @@ function zeichneZeilen() {
       menue.setAttribute("aria-expanded", String(auf));
     });
 
+    // Die Beschriftung sagt, was der Druck bewirkt -- nicht, in welchem
+    // Zustand die Zeile gerade ist. Ein Schalter, der seinen Zustand
+    // beschriftet, wird regelmaessig falsch herum gelesen.
+    knoten.querySelector('[data-tat="rueckreise"]').textContent =
+      zeile.ist_folgezeile ? "Markierung aufheben" : "Als Rückreise markieren";
+
     alle(".tag-aktionen button", knoten).forEach((knopf) => {
       knopf.addEventListener("click", () => {
         fuehreZeilenaktion(knopf.dataset.tat, index);
@@ -403,7 +474,15 @@ function zeichneZeilen() {
 
 function fuehreZeilenaktion(tat, index) {
   const zeilen = zustand.zeilen;
-  if (tat === "entfernen") {
+  if (tat === "rueckreise") {
+    const zeile = zeilen[index];
+    zeile.ist_folgezeile = !zeile.ist_folgezeile;
+    // Eine Folgezeile traegt kein eigenes Datum -- so steht es in der
+    // Excel-Vorlage, und so leert es auch die Desktop-App beim Umschalten.
+    // Beim Zuruecknehmen bekommt die Zeile wieder eine Vorbelegung, sonst
+    // stuende dort ein leeres Pflichtfeld.
+    zeile.datum = zeile.ist_folgezeile ? null : vorschlagsdatum();
+  } else if (tat === "entfernen") {
     zeilen.splice(index, 1);
   } else if (tat === "duplizieren") {
     if (zeilen.length >= MAX_ZEILEN) return;
@@ -495,6 +574,8 @@ function zeichneProfil() {
   if (p.abteilung) teile.push(p.abteilung);
   el("profil-zusammenfassung").textContent =
     teile.length ? teile.join(" · ") : "Noch nichts hinterlegt — tippe auf Bearbeiten.";
+
+  if (typeof GLAZ_GRUPPENLEITER !== "undefined") GLAZ_GRUPPENLEITER.zeichne();
 }
 
 function zeichneEinsatzarten() {
@@ -537,6 +618,29 @@ function melde(text, schwere = "") {
   else delete feld.dataset.schwere;
 }
 
+/**
+ * Wendet das gewaehlte Erscheinungsbild an.
+ *
+ * Das Attribut am <html>-Element steuert die Palette in app.css. Gesetzt wird
+ * es bereits im Kopf der Seite, damit beim Start nichts aufblitzt; diese
+ * Funktion ist fuer das spaetere Umschalten zustaendig.
+ *
+ * Mitgefuehrt wird die Farbe der Statusleiste: Auf dem iPhone faerbt sie den
+ * Bereich um die Uhrzeit. Bliebe sie stehen, saesse ueber einer hellen Seite
+ * ein tiefblauer Balken.
+ */
+function wendeThemaAn(thema) {
+  const gewaehlt = thema === "hell" ? "hell" : "dunkel";
+  document.documentElement.dataset.thema = gewaehlt;
+
+  const marke = document.querySelector('meta[name="theme-color"]');
+  if (marke) marke.setAttribute("content", gewaehlt === "hell" ? "#EEF2F7" : "#060E1A");
+
+  alle("[data-thema]", el("menue")).forEach((knopf) =>
+    knopf.setAttribute("aria-checked", String(knopf.dataset.thema === gewaehlt))
+  );
+}
+
 function setzeBereitschaft(stand, text) {
   el("bereitschaftspunkt").dataset.stand = stand;
   el("bereitschaftstext").textContent = text;
@@ -545,8 +649,18 @@ function setzeBereitschaft(stand, text) {
 function pruefeJetzt() {
   if (!kernBereit) return;
   let ergebnis;
+  const roh = JSON.stringify(vorgangDict());
   try {
-    ergebnis = rufe("bruecke_pruefe", JSON.stringify(vorgangDict()));
+    ergebnis = rufe("bruecke_pruefe", roh);
+
+    // Die Zieldatei gehoert in dieselbe laufende Pruefung. Lief sie erst beim
+    // Druck auf den Abschlussknopf, erfuhr man "die Datei ist voll" in dem
+    // Moment, in dem man senden wollte -- und nicht, als man sie auswaehlte.
+    if (zustand.modus !== "neu" && zieldateiGeladen) {
+      const ziel = rufe("bruecke_pruefe_ziel", roh, "/ziel.xlsx", zustand.modus);
+      ergebnis.issues = ergebnis.issues.concat(ziel.issues);
+      ergebnis.absendbar = ergebnis.absendbar && ziel.absendbar;
+    }
   } catch (e) {
     melde(`Die Prüfung ist gestolpert: ${e.message}`, "fehler");
     return;
@@ -617,6 +731,17 @@ function zeigePruefung(erg) {
     else f.dataset.warnung = "true";
   }
 
+  // Zaehler am Blockkopf, solange der Profilbereich zugeklappt ist.
+  const profilFehler = erg.issues.filter(
+    (i) => i.schwere === "fehler" && String(i.feld || "").startsWith("profil.")
+  ).length;
+  const zaehler = el("profil-fehlerzahl");
+  const zugeklappt = el("profil-felder").hidden;
+  zaehler.hidden = !(profilFehler && zugeklappt);
+  zaehler.dataset.schwere = "fehler";
+  zaehler.textContent =
+    profilFehler === 1 ? "1 Angabe fehlt" : `${profilFehler} Angaben fehlen`;
+
   el("kopf-zeitraum").textContent = erg.zeitraum_text || "Noch keine Zeiten erfasst";
   el("dateiname-vorschau").textContent = erg.dateiname || "—";
 
@@ -649,6 +774,31 @@ function zeigePruefung(erg) {
     );
   } else {
     melde("Alles vollständig.", "erfolg");
+  }
+}
+
+let profilHinweisKennung = null;
+
+/**
+ * Zeigt eine Meldung unter den Profilfeldern und nimmt sie danach zurueck.
+ *
+ * Zurueckgenommen wird sie, weil eine stehengebliebene Erfolgsmeldung beim
+ * naechsten Blick etwas behauptet, das laengst nicht mehr stimmt. Dieselbe
+ * Ueberlegung wie in _setze_profil_hinweis der Desktop-App, dort ebenfalls
+ * mit sechs Sekunden.
+ */
+function setzeProfilHinweis(text, schwere = "") {
+  const feld = el("profil-hinweis");
+  feld.textContent = text;
+  if (schwere) feld.dataset.schwere = schwere;
+  else delete feld.dataset.schwere;
+
+  clearTimeout(profilHinweisKennung);
+  if (text !== PROFIL_HINWEIS_STANDARD) {
+    profilHinweisKennung = setTimeout(
+      () => setzeProfilHinweis(PROFIL_HINWEIS_STANDARD),
+      6000
+    );
   }
 }
 
@@ -702,10 +852,28 @@ async function abschluss() {
         melde(zielfehler[0].meldung, "fehler");
         return;
       }
-      ergebnis =
-        zustand.modus === "ergaenzen"
-          ? rufe("bruecke_ergaenze", roh, pfad)
-          : { pfad, dateiname: zieldatei.name, bytes: zieldatei.size };
+      if (zustand.modus === "ergaenzen") {
+        // Liegt ein Block aus einem vorherigen Lauf in genau dieser Datei,
+        // wird er ueberschrieben statt ein zweiter danebengesetzt. Dieselbe
+        // Ueberlegung wie im Aktualisieren-Zustand der Desktop-App: Wer nach
+        // dem Versand noch etwas korrigiert, will eine berichtigte Liste --
+        // keine zweite Eintragung derselben Reise.
+        const merker = letzterAnhang && letzterAnhang.name === zieldatei.name
+          ? letzterAnhang
+          : null;
+        ergebnis = rufe(
+          "bruecke_ergaenze", roh, pfad,
+          merker ? merker.start_row : null,
+          merker ? merker.zeilen : 0
+        );
+        letzterAnhang = {
+          name: zieldatei.name,
+          start_row: ergebnis.start_row,
+          zeilen: ergebnis.geschriebene_zeilen,
+        };
+      } else {
+        ergebnis = { pfad, dateiname: zieldatei.name, bytes: zieldatei.size };
+      }
     }
 
     const bytes = py.FS.readFile(ergebnis.pfad || pfad);
@@ -1066,6 +1234,7 @@ function verdrahte() {
     felder.hidden = !felder.hidden;
     el("knopf-profil-auf").setAttribute("aria-expanded", String(!felder.hidden));
     el("knopf-profil-auf").textContent = felder.hidden ? "Bearbeiten" : "Fertig";
+    if (letztePruefung) zeigePruefung(letztePruefung);
   });
 
   el("profil-auswahl").addEventListener("change", (e) => {
@@ -1165,7 +1334,8 @@ function verdrahte() {
     const wert = e.target.value.trim();
     if (wert && !zustand.einsatzarten.includes(wert)) {
       zustand.einsatzarten.unshift(wert);
-      zustand.einsatzarten = zustand.einsatzarten.slice(0, 12);
+      // 20 wie MAX_EINSATZART_HISTORIE in glaz/settings.py.
+      zustand.einsatzarten = zustand.einsatzarten.slice(0, 20);
       zeichneEinsatzarten();
       speichern();
     }
@@ -1183,16 +1353,7 @@ function verdrahte() {
   // --- Reisetage
   el("knopf-zeile-neu").addEventListener("click", () => {
     if (zustand.zeilen.length >= MAX_ZEILEN) return;
-    // Datum der letzten Zeile plus einen Tag: eine Dienstreise geht
-    // typischerweise ueber aufeinanderfolgende Tage.
-    const letzte = zustand.zeilen.filter((z) => z.datum).slice(-1)[0];
-    const neue = leereZeile();
-    if (letzte && letzte.datum) {
-      const d = new Date(`${letzte.datum}T12:00:00`);
-      d.setDate(d.getDate() + 1);
-      neue.datum = d.toISOString().slice(0, 10);
-    }
-    zustand.zeilen.push(neue);
+    zustand.zeilen.push(leereZeile());
     zeichneZeilen();
     nachEingabe();
   });
@@ -1221,8 +1382,13 @@ function verdrahte() {
       return;
     }
     el("zieldatei-info").textContent = `${zieldatei.name} wird gelesen …`;
+    zieldateiGeladen = false;
+    // Eine andere Datei heisst: Der gemerkte Block gilt nicht mehr. Ihn
+    // stehen zu lassen hiesse, in einer fremden Datei Zeilen zu ueberschreiben.
+    if (!letzterAnhang || letzterAnhang.name !== zieldatei.name) letzterAnhang = null;
     try {
       py.FS.writeFile("/ziel.xlsx", new Uint8Array(await zieldatei.arrayBuffer()));
+      zieldateiGeladen = true;
       const bel = rufe("bruecke_belegung", "/ziel.xlsx");
       const belegt = bel.belegte_zeilen ?? bel.belegt ?? bel.anzahl ?? null;
       el("zieldatei-info").textContent =
@@ -1257,11 +1423,19 @@ function verdrahte() {
       const ziel = knopf.dataset.ziel;
       if (ziel === "neuer-vorgang") {
         if (!confirm("Alle erfassten Reisetage verwerfen?")) return;
+        // Genau das, was _neuer_vorgang in der Desktop-App zuruecksetzt:
+        // Zeilen, Einsatzart und Reisetyp. Das Profil bleibt stehen -- es ist
+        // der Teil, der ueber Vorgaenge hinweg gilt.
         zustand.zeilen = [leereZeile()];
+        zustand.einsatzart = "";
+        zustand.reisetyp = "inland";
         zieldatei = null;
         zustand.modus = "neu";
+        el("f-einsatzart").value = "";
+        el("zieldatei-info").textContent = "Noch keine Datei gewählt.";
         zeichneUmschalter();
         zeichneZeilen();
+        aktualisiereKnopftext();
         nachEingabe();
         return;
       }
@@ -1303,6 +1477,34 @@ function verdrahte() {
     location.reload();
   });
 
+  // --- Profil ausdruecklich sichern
+  el("knopf-profil-speichern").addEventListener("click", () => {
+    const profil = aktuellesProfil();
+    profil.name = eindeutigerProfilname(profil.name, zustand.aktivesProfil);
+    zeichneProfil();
+    if (speichern()) {
+      setzeProfilHinweis(
+        `Profil „${profilLabel(profil)}“ gesichert – nur auf diesem Gerät.`,
+        "erfolg"
+      );
+    } else {
+      setzeProfilHinweis(
+        "Das Profil ließ sich nicht sichern. Ist der Speicher des Browsers gesperrt " +
+        "(privates Fenster)?",
+        "fehler"
+      );
+    }
+  });
+
+  // --- Erscheinungsbild
+  alle("[data-thema]", el("menue")).forEach((knopf) =>
+    knopf.addEventListener("click", () => {
+      zustand.einstellungen.thema = knopf.dataset.thema;
+      wendeThemaAn(zustand.einstellungen.thema);
+      speichern();
+    })
+  );
+
   // --- Selbsttest
   el("knopf-selbsttest-start").addEventListener("click", starteSelbsttest);
 
@@ -1332,6 +1534,21 @@ function aktualisiereKnopftext() {
 function start() {
   laden();
   if (!zustand.zeilen.length) zustand.zeilen = [leereZeile()];
+
+  wendeThemaAn(zustand.einstellungen.thema);
+
+  // Die Gruppenleiter-Verwaltung baut sich selbst in ihren Behaelter. Sie
+  // bekommt ausschliesslich diese schmale Umgebung statt Zugriff auf den
+  // ganzen Zustand -- so bleibt nachvollziehbar, was sie anfassen kann.
+  if (typeof GLAZ_GRUPPENLEITER !== "undefined") {
+    GLAZ_GRUPPENLEITER.initialisieren({
+      liste: () => zustand.gruppenleiter,
+      setzeListe: (neu) => { zustand.gruppenleiter = neu; speichern(); },
+      aktuellesProfil,
+      profilGeaendert: () => { zeichneProfil(); nachEingabe(); },
+      melde: setzeProfilHinweis,
+    });
+  }
 
   verdrahte();
   zeichneProfil();
