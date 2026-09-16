@@ -1,0 +1,780 @@
+/* ==========================================================================
+   GLAZ-Korrekturbuchungsliste — Oberflaeche fuer das Handy
+
+   Die Farben, Radien und Schriftgroessen sind dieselben wie in der
+   Desktop-App (glaz/ui/theme.py, Styleguide "Digital Content Hub"). Sie
+   stehen hier als Custom Properties, damit beide Oberflaechen erkennbar
+   dieselbe Anwendung sind.
+
+   Zwei Dinge unterscheiden diese Fassung von der Desktop-Oberflaeche, und
+   beide folgen aus dem Geraet:
+
+   1. Die Reisetage sind keine Tabelle. Acht Uhrzeiten nebeneinander
+      brauchen rund 700 px; ein iPhone hat 390. Jeder Tag wird deshalb eine
+      Karte mit drei beschrifteten Zeitpaaren.
+   2. Ueber jeder Karte liegt das Tagesband — ein Balken, der die erfassten
+      Zeiten massstaeblich auf der Tagesachse zeigt. Am Schreibtisch kann man
+      acht Zahlen in einer Zeile ueberblicken, am Telefon nicht. Das Band
+      ersetzt diesen Ueberblick und macht Luecken und Ueberschneidungen
+      sichtbar, bevor die Pruefung sie meldet.
+   ========================================================================== */
+
+@font-face {
+  font-family: "Manrope";
+  /* Manrope ist eine variable Schrift mit der Achse wght von 200 bis 800.
+     Zweimal dieselbe Datei mit unterschiedlicher Formatangabe: WebKit wollte
+     historisch "truetype-variations", neuere Browser verstehen "truetype".
+     Der Browser nimmt den ersten Eintrag, dessen Format er kennt. */
+  src: url("fonts/Manrope.ttf") format("truetype-variations"),
+       url("fonts/Manrope.ttf") format("truetype");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  /* Grundflaechen, von tief nach erhaben */
+  --bg-tief: #060E1A;
+  --bg: #091526;
+  --bg-sanft: #0D1E35;
+  --bg-erhaben: #122540;
+
+  --rand-zart: #14223A;
+  --rand: #1C2E47;
+
+  /* Glaskanten als weisse Transparenzen — passen sich jedem Grund an */
+  --glas-rand: rgba(255, 255, 255, 0.055);
+  --glas-kante: rgba(255, 255, 255, 0.10);
+
+  /* Genau eine Akzentfarbe, ausschliesslich fuer die Primaeraktion */
+  --akzent: #00BEDC;
+  --akzent-hover: #00D4F4;
+  --akzent-schwach: rgba(0, 190, 220, 0.12);
+  --auf-akzent: #060E1A;
+
+  --text: #F2F6FC;
+  --text-zweit: #AFC6DA;
+  --text-schwach: #7593AE;
+
+  --erfolg: #32D74B;
+  --fehler: #FF453A;
+  --warnung: #FF9F0A;
+  --info: #4A90D9;
+
+  --radius-gross: 18px;
+  --radius-mittel: 10px;
+  --radius-klein: 8px;
+
+  --fs-xs: 11px;
+  --fs-sm: 13px;
+  --fs-base: 16px;   /* 16 statt 14: unter 16 px zoomt iOS beim Tippen hinein */
+  --fs-titel: 20px;
+
+  --schrift: "Manrope", "Helvetica Neue", "Segoe UI Variable", "Segoe UI",
+             -apple-system, system-ui, sans-serif;
+
+  /* Mindesthoehe einer Tippflaeche. Apples eigene Empfehlung sind 44 pt. */
+  --tippflaeche: 44px;
+
+  /* Die sichere Zone des Geraets, einmal aufgeloest und dann ueberall nutzbar */
+  --sicher-oben: env(safe-area-inset-top, 0px);
+  --sicher-unten: env(safe-area-inset-bottom, 0px);
+  --sicher-links: env(safe-area-inset-left, 0px);
+  --sicher-rechts: env(safe-area-inset-right, 0px);
+
+  color-scheme: dark light;
+}
+
+/* Heller Modus: bewusst ohne Glaseffekt. Der lebt vom dunklen Grund; auf
+   Weiss wird aus der Lichtkante ein schmutziger Rand. Statt Transparenzen
+   tragen hier klare Flaechen und ein feiner Rahmen die Gliederung. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg-tief: #EEF2F7;
+    --bg: #F7F9FC;
+    --bg-sanft: #FFFFFF;
+    --bg-erhaben: #FFFFFF;
+    --rand-zart: #DCE4EE;
+    --rand: #C3D0E0;
+    --glas-rand: #DCE4EE;
+    --glas-kante: transparent;
+    --akzent: #0089A0;
+    --akzent-hover: #00A0BB;
+    --akzent-schwach: rgba(0, 137, 160, 0.10);
+    --auf-akzent: #FFFFFF;
+    --text: #0B1B2E;
+    --text-zweit: #3E5770;
+    --text-schwach: #6B8299;
+    --erfolg: #1E8E3E;
+    --fehler: #C5221F;
+    --warnung: #A8630A;
+    --info: #1A5FA8;
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* Die Oberflaeche schaltet Bereiche ueber das hidden-Attribut. Ohne diese
+   Zeile verliert es jedes Mal, wenn eine eigene Klasse demselben Element ein
+   display zuweist: .felder{display:grid} ist eine Klassenregel und schlaegt
+   die Standardregel [hidden]{display:none} des Browsers. Der Bereich waere
+   dann als versteckt ausgezeichnet und trotzdem sichtbar. Einer der wenigen
+   Faelle, in denen !important die richtige Antwort ist — es verteidigt eine
+   Zusage des Browsers, statt eine Layoutentscheidung zu erzwingen. */
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--schrift);
+  font-size: var(--fs-base);
+  /* Ausdruecklich 400: Manropes Vorgabe-Instanz ist 200 (ExtraLight). Wendet
+     ein Browser die Gewichtsachse nicht an, stuende die ganze Oberflaeche
+     sonst in Haarstrichen da. */
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg-tief);
+  /* Kein Gummiband-Scrollen ueber die Raender — das laesst eine installierte
+     Web-App sofort wie eine Webseite wirken. */
+  overscroll-behavior-y: none;
+  padding-left: var(--sicher-links);
+  padding-right: var(--sicher-rechts);
+}
+
+h1, h2 { margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+h1 { font-size: var(--fs-titel); }
+h2 { font-size: var(--fs-sm); font-weight: 600; color: var(--text-zweit); }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  color: var(--text-zweit);
+  background: var(--akzent-schwach);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.sprungmarke {
+  position: absolute;
+  left: -9999px;
+}
+.sprungmarke:focus {
+  left: 8px;
+  top: calc(var(--sicher-oben) + 8px);
+  z-index: 50;
+  background: var(--akzent);
+  color: var(--auf-akzent);
+  padding: 10px 14px;
+  border-radius: var(--radius-klein);
+}
+
+/* --------------------------------------------------------------------------
+   Kopfzeile — bleibt oben stehen, weil der erfasste Zeitraum die einzige
+   Angabe ist, die beim Scrollen durch 14 Tage die Orientierung haelt.
+   -------------------------------------------------------------------------- */
+.kopf {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  padding-top: calc(var(--sicher-oben) + 10px);
+  background: var(--bg-tief);
+  background: color-mix(in srgb, var(--bg-tief) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--rand-zart);
+}
+
+.kopf-titel { min-width: 0; }
+.kopf-zeitraum {
+  margin: 1px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text-schwach);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kopf-knopf {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  min-height: 34px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-zweit);
+  background: var(--bg-sanft);
+  border: 1px solid var(--glas-rand);
+  border-top-color: var(--glas-kante);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.punkt {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-schwach);
+  flex: none;
+}
+.punkt[data-stand="bereit"]  { background: var(--erfolg); }
+.punkt[data-stand="startet"] { background: var(--warnung); }
+.punkt[data-stand="fehler"]  { background: var(--fehler); }
+
+/* --------------------------------------------------------------------------
+   Ausklappmenue
+   -------------------------------------------------------------------------- */
+.menue {
+  position: fixed;
+  z-index: 30;
+  top: calc(var(--sicher-oben) + 56px);
+  right: calc(var(--sicher-rechts) + 12px);
+  left: auto;
+  width: min(280px, calc(100vw - 24px));
+  padding: 6px;
+  background: var(--bg-erhaben);
+  border: 1px solid var(--glas-rand);
+  border-top-color: var(--glas-kante);
+  border-radius: var(--radius-mittel);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+.menue button {
+  display: block;
+  width: 100%;
+  min-height: var(--tippflaeche);
+  padding: 0 12px;
+  text-align: left;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-klein);
+  cursor: pointer;
+}
+.menue button:active { background: var(--bg-sanft); }
+.menue-fuss {
+  margin: 4px 0 2px;
+  padding: 0 12px;
+  font-size: var(--fs-xs);
+  color: var(--text-schwach);
+}
+
+/* --------------------------------------------------------------------------
+   Bloecke: Gliederung durch Weissraum und eine Haarlinie, keine Karten.
+   Das ist der Kern des bestehenden Design-Konzepts und bleibt hier gueltig.
+   -------------------------------------------------------------------------- */
+main { padding: 0 16px; }
+
+.block {
+  padding: 22px 0;
+  border-bottom: 1px solid var(--rand-zart);
+}
+.block:last-of-type { border-bottom: 0; }
+
+.block-kopf {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.zaehler {
+  font-size: var(--fs-xs);
+  color: var(--text-schwach);
+  font-variant-numeric: tabular-nums;
+}
+
+.zusammenfassung {
+  margin: 8px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-schwach);
+}
+.dateiname {
+  color: var(--text-zweit);
+  word-break: break-all;
+}
+
+.hinweis {
+  margin: 14px 0 0;
+  padding: 11px 13px;
+  font-size: var(--fs-sm);
+  color: var(--text-zweit);
+  background: var(--akzent-schwach);
+  border-left: 2px solid var(--akzent);
+  border-radius: 0 var(--radius-klein) var(--radius-klein) 0;
+}
+
+/* --------------------------------------------------------------------------
+   Felder
+   -------------------------------------------------------------------------- */
+.felder {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.feld, .feld-aktionen { grid-column: 1 / -1; }
+.feld-halb { grid-column: span 1; }
+
+.feld { display: block; min-width: 0; }
+
+.feld > span, .feld-name {
+  display: block;
+  margin-bottom: 5px;
+  font-size: var(--fs-xs);
+  color: var(--text-schwach);
+}
+
+input[type="text"], input[type="email"], input[type="date"],
+input[type="time"], input[type="file"], select, textarea {
+  width: 100%;
+  min-height: var(--tippflaeche);
+  padding: 9px 12px;
+  font: inherit;
+  font-size: var(--fs-base);
+  color: var(--text);
+  background: var(--bg-sanft);
+  border: 1px solid var(--glas-rand);
+  border-top-color: var(--glas-kante);
+  border-radius: var(--radius-mittel);
+  /* Ohne das gibt iOS jedem Feld seinen eigenen Innenschatten und
+     ueberschreibt die Hintergrundfarbe mit Weiss. */
+  -webkit-appearance: none;
+  appearance: none;
+}
+textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
+
+select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-schwach) 50%),
+                    linear-gradient(135deg, var(--text-schwach) 50%, transparent 50%);
+  background-position: calc(100% - 19px) calc(50% + 2px), calc(100% - 14px) calc(50% + 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 34px;
+}
+
+input::placeholder { color: var(--text-schwach); opacity: 1; }
+
+:focus-visible {
+  outline: 2px solid var(--akzent);
+  outline-offset: 2px;
+}
+
+input[aria-invalid="true"] { border-color: var(--fehler); }
+input[data-warnung="true"] { border-color: var(--warnung); }
+
+.schalter {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: var(--tippflaeche);
+  margin-top: 14px;
+  font-size: var(--fs-sm);
+  color: var(--text-zweit);
+}
+.schalter input {
+  width: 21px; height: 21px;
+  flex: none;
+  accent-color: var(--akzent);
+}
+
+/* --------------------------------------------------------------------------
+   Schaltflaechen
+   -------------------------------------------------------------------------- */
+.textknopf {
+  min-height: 34px;
+  padding: 0 4px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--akzent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.textknopf-warnend { color: var(--fehler); }
+
+.knopf-zweit {
+  min-height: var(--tippflaeche);
+  padding: 0 16px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-zweit);
+  background: var(--bg-sanft);
+  border: 1px solid var(--glas-rand);
+  border-top-color: var(--glas-kante);
+  border-radius: var(--radius-mittel);
+  cursor: pointer;
+}
+.knopf-zweit:active { background: var(--bg-erhaben); }
+
+.feld-aktionen, .zeilen-aktionen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.zeilen-aktionen { margin-top: 14px; }
+
+.umschalter {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  background: var(--bg-sanft);
+  border: 1px solid var(--glas-rand);
+  border-radius: var(--radius-mittel);
+}
+.umschalter-drei { grid-template-columns: repeat(3, 1fr); }
+.umschalter button {
+  min-height: 38px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-schwach);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-klein);
+  cursor: pointer;
+}
+.umschalter button[aria-checked="true"] {
+  color: var(--text);
+  background: var(--bg-erhaben);
+  box-shadow: 0 1px 0 var(--glas-kante) inset;
+}
+
+/* --------------------------------------------------------------------------
+   Reisetag
+   -------------------------------------------------------------------------- */
+.tag {
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--rand-zart);
+}
+.tag:first-child { border-top: 0; padding-top: 4px; }
+
+.tag-kopf {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tag-nummer {
+  flex: none;
+  width: 22px;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-schwach);
+}
+.tag-datum { flex: 1; min-width: 0; }
+.tag-menue {
+  flex: none;
+  width: var(--tippflaeche);
+  height: var(--tippflaeche);
+  display: grid;
+  place-items: center;
+  color: var(--text-schwach);
+  fill: currentColor;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-klein);
+  cursor: pointer;
+}
+
+/* Folgezeile: kein eigenes Datum, genau wie in der Excel-Vorlage. */
+.tag[data-folgezeile="true"] .tag-datum { visibility: hidden; }
+.tag[data-folgezeile="true"] .tag-nummer::after {
+  content: "Folgezeile";
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+  color: var(--text-schwach);
+  background: var(--bg-sanft);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* ---- Das Tagesband -------------------------------------------------------
+   Eine Spur von 00:00 bis 24:00. Jedes erfasste Zeitpaar liegt darin
+   massstaeblich als Segment. Farbe trennt die drei Arten:
+     Arbeit  — hell und neutral: der Normalzustand, der ohnehin gebucht ist
+     Passiv  — blau: mitgefahren
+     Aktiv   — cyan: selbst gefahren; das ist die Zeit, um die es in der
+               Korrektur eigentlich geht, deshalb traegt sie die Akzentfarbe
+   Ueberschneidungen sind so zu sehen, bevor die Pruefung sie meldet.
+   -------------------------------------------------------------------------- */
+.band {
+  position: relative;
+  height: 6px;
+  margin: 12px 0 4px;
+  border-radius: 3px;
+  /* Die Randfarbe, nicht die Flaechenfarbe: im hellen Modus ist letztere
+     reines Weiss, und ein leeres Band saehe dann aus wie ein Eingabefeld. */
+  background: var(--rand-zart);
+  overflow: hidden;
+}
+.band-spur { position: absolute; inset: 0; }
+.band-teil {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+}
+.band-teil[data-art="arbeit"] { background: var(--text-zweit); opacity: 0.45; }
+.band-teil[data-art="passiv"] { background: var(--info); }
+.band-teil[data-art="aktiv"]  { background: var(--akzent); }
+/* Die Grenzuebertritte sind Zeitpunkte, keine Spannen — als Strich, nicht als Balken. */
+.band-teil[data-art="grenze"] { background: var(--warnung); min-width: 2px; }
+
+.paare {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.paar {
+  display: grid;
+  grid-template-columns: 62px 1fr 14px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.paar-name {
+  font-size: var(--fs-xs);
+  color: var(--text-schwach);
+}
+.paar[data-art="aktiv"] .paar-name { color: var(--akzent); }
+.paar[data-art="passiv"] .paar-name { color: var(--info); }
+.bis {
+  text-align: center;
+  color: var(--text-schwach);
+}
+
+/* Uhrzeiten mit Tabellenziffern: nur so stehen die Doppelpunkte in allen
+   sechs Feldern untereinander. Bei einer Liste aus Zeiten ist das kein
+   Feinschliff, sondern der Unterschied zwischen lesbar und unruhig. */
+.zeit {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  text-align: center;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+/* Leere Zeitfelder treten zurueck — gefuellte sind das Signal. */
+.zeit:not([data-gefuellt="true"]) { color: var(--text-schwach); }
+
+.tag-meldungen {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.tag-meldungen li {
+  font-size: var(--fs-sm);
+  padding: 3px 0 3px 14px;
+  position: relative;
+}
+.tag-meldungen li::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 10px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+}
+.tag-meldungen li[data-schwere="fehler"] { color: var(--fehler); }
+.tag-meldungen li[data-schwere="fehler"]::before { background: var(--fehler); }
+.tag-meldungen li[data-schwere="warnung"] { color: var(--warnung); }
+.tag-meldungen li[data-schwere="warnung"]::before { background: var(--warnung); }
+
+.tag-aktionen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.tag-aktionen button {
+  min-height: 38px;
+  padding: 0 13px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-zweit);
+  background: var(--bg-sanft);
+  border: 1px solid var(--glas-rand);
+  border-radius: var(--radius-klein);
+  cursor: pointer;
+}
+.tag-aktionen button.warnend { color: var(--fehler); }
+
+/* --------------------------------------------------------------------------
+   Aktionsleiste
+   -------------------------------------------------------------------------- */
+.leiste-platzhalter { height: 108px; }
+
+.aktionsleiste {
+  position: fixed;
+  z-index: 20;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  padding-bottom: calc(var(--sicher-unten) + 12px);
+  padding-left: calc(var(--sicher-links) + 16px);
+  padding-right: calc(var(--sicher-rechts) + 16px);
+  background: var(--bg-tief);
+  background: color-mix(in srgb, var(--bg-tief) 92%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--rand-zart);
+}
+
+.leiste-meldung {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-schwach);
+  min-height: 1.45em;
+}
+.leiste-meldung[data-schwere="fehler"] { color: var(--fehler); }
+.leiste-meldung[data-schwere="warnung"] { color: var(--warnung); }
+.leiste-meldung[data-schwere="erfolg"] { color: var(--erfolg); }
+
+.knopf-haupt {
+  width: 100%;
+  min-height: 52px;
+  font: inherit;
+  font-size: var(--fs-base);
+  font-weight: 700;
+  color: var(--auf-akzent);
+  background: var(--akzent);
+  border: 0;
+  border-radius: var(--radius-mittel);
+  cursor: pointer;
+}
+.knopf-haupt:active { background: var(--akzent-hover); }
+.knopf-haupt:disabled {
+  color: var(--text-schwach);
+  background: var(--bg-erhaben);
+  cursor: default;
+}
+.knopf-haupt[data-laeuft="true"] { color: var(--text-schwach); }
+
+/* --------------------------------------------------------------------------
+   Anstupser (iOS-Installationshinweis)
+   -------------------------------------------------------------------------- */
+.anstupser {
+  position: fixed;
+  z-index: 40;
+  left: 12px; right: 12px;
+  /* Ueber der Aktionsleiste, nicht auf ihr: der Hinweis ist wichtig, aber er
+     darf die Primaeraktion nicht verdecken. 108 px ist die Hoehe, die auch
+     .leiste-platzhalter freihaelt. */
+  bottom: calc(var(--sicher-unten) + 108px + 12px);
+  padding: 16px;
+  background: var(--bg-erhaben);
+  border: 1px solid var(--glas-rand);
+  border-top-color: var(--glas-kante);
+  border-radius: var(--radius-gross);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.5);
+}
+.anstupser p { margin: 0 0 8px; font-size: var(--fs-sm); color: var(--text-zweit); }
+.anstupser strong { color: var(--text); }
+.anstupser-weg em { font-style: normal; color: var(--text); }
+.teilen-symbol {
+  display: inline-block;
+  width: 11px; height: 14px;
+  vertical-align: -2px;
+  border: 1.5px solid currentColor;
+  border-top: 0;
+  border-radius: 2px;
+  position: relative;
+}
+.teilen-symbol::before {
+  content: "";
+  position: absolute;
+  left: 50%; top: -7px;
+  width: 1.5px; height: 8px;
+  background: currentColor;
+  transform: translateX(-50%);
+}
+
+/* --------------------------------------------------------------------------
+   Pruefliste des Selbsttests
+   -------------------------------------------------------------------------- */
+.pruefliste {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+.pruefliste li {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rand-zart);
+  font-size: var(--fs-sm);
+}
+.pruefliste li::before {
+  content: "·";
+  text-align: center;
+  color: var(--text-schwach);
+}
+.pruefliste li[data-stand="laeuft"]::before { content: "…"; }
+.pruefliste li[data-stand="gut"]::before    { content: "✓"; color: var(--erfolg); }
+.pruefliste li[data-stand="schlecht"]::before { content: "✕"; color: var(--fehler); }
+.pruefliste li[data-stand="warnung"]::before  { content: "!"; color: var(--warnung); }
+.pruefliste b { display: block; font-weight: 600; color: var(--text); }
+.pruefliste span { color: var(--text-schwach); }
+
+/* --------------------------------------------------------------------------
+   Ab 700 px: die Reisetage kehren in das Tabellenraster der Desktop-App
+   zurueck. Derselbe Code, zwei Gestalten — wer die App auf dem iPad oder im
+   Browser am Rechner oeffnet, bekommt die gewohnte Ansicht.
+   -------------------------------------------------------------------------- */
+@media (min-width: 700px) {
+  main {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+  .felder { grid-template-columns: repeat(4, 1fr); }
+  .feld-halb { grid-column: span 2; }
+
+  .tag {
+    /* 260 statt 210: Nummer, Datumsfeld und Menueknopf teilen sich diese
+       Spalte. Bei 210 px schnitt das Datumsfeld die Jahreszahl ab — ein
+       "16.09.202" ist in einer Reisekostenliste keine Kleinigkeit. */
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 18px;
+    align-items: start;
+  }
+  .tag-kopf { grid-column: 1; }
+  .band { grid-column: 1 / -1; grid-row: 2; margin-top: 0; }
+  .paare {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: repeat(2, 1fr);
+    margin-top: 0;
+  }
+  .tag-meldungen, .tag-aktionen { grid-column: 1 / -1; }
+
+  .aktionsleiste {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+  }
+  .knopf-haupt { width: auto; min-width: 280px; }
+  .leiste-platzhalter { height: 92px; }
+}
+
+/* --------------------------------------------------------------------------
+   Bewegung nur, wenn sie gewuenscht ist.
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  .band-teil { transition: left 140ms ease, width 140ms ease; }
+  .knopf-haupt { transition: background-color 120ms ease; }
+}

@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover: ohne das bleibt auf dem iPhone unter der Notch und
+     ueber dem Home-Indikator ein weisser Balken stehen. Die sichere Zone
+     holen wir uns in app.css ueber env(safe-area-inset-*) selbst zurueck. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#060E1A">
+<meta name="description" content="GLAZ-Korrekturbuchungsliste fuer Dienstreisen — laeuft vollstaendig im Geraet, auch ohne Netz.">
+
+<!-- iOS beachtet das Manifest erst teilweise; diese Angaben sind dort
+     weiterhin das, was den Browser-Rahmen verschwinden laesst. Beide Namen
+     stehen bewusst da: Chrome haelt die apple-Variante fuer veraltet, iOS
+     kennt die neue nicht. Wer nur eine setzt, verliert eine Plattform. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GLAZ">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="stylesheet" href="app.css">
+<title>GLAZ-Korrekturbuchungsliste</title>
+</head>
+<body>
+
+<a class="sprungmarke" href="#reisetage">Zu den Reisetagen springen</a>
+
+<header class="kopf">
+  <div class="kopf-titel">
+    <h1>Korrekturbuchung</h1>
+    <p class="kopf-zeitraum" id="kopf-zeitraum">Noch keine Zeiten erfasst</p>
+  </div>
+  <button type="button" class="kopf-knopf" id="knopf-menue" aria-expanded="false" aria-controls="menue">
+    <span class="punkt" id="bereitschaftspunkt" data-stand="startet"></span>
+    <span class="kopf-knopf-text" id="bereitschaftstext">startet</span>
+  </button>
+</header>
+
+<!-- Ausklappmenue statt Menueleiste: auf 390 px ist jede permanente
+     Zweitnavigation verschenkte Hoehe. -->
+<div class="menue" id="menue" hidden>
+  <button type="button" data-ziel="einstellungen">Einstellungen</button>
+  <button type="button" data-ziel="selbsttest">Selbsttest auf diesem Gerät</button>
+  <button type="button" data-ziel="neuer-vorgang">Neuer Vorgang</button>
+  <p class="menue-fuss" id="menue-fuss">Fassung wird geladen …</p>
+</div>
+
+<main id="hauptbereich">
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Profil: zugeklappt nur die Zusammenfassung. Wer zum dritten Mal in  -->
+  <!-- derselben Woche eine Liste schreibt, will seine Personalnummer      -->
+  <!-- nicht jedes Mal sehen.                                             -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="block" id="profil-block">
+    <div class="block-kopf">
+      <h2>Profil</h2>
+      <button type="button" class="textknopf" id="knopf-profil-auf" aria-expanded="false" aria-controls="profil-felder">Bearbeiten</button>
+    </div>
+
+    <div class="profil-wahl">
+      <select id="profil-auswahl" aria-label="Profil auswählen"></select>
+    </div>
+    <p class="zusammenfassung" id="profil-zusammenfassung">Noch kein Profil angelegt.</p>
+
+    <div class="felder" id="profil-felder" hidden>
+      <label class="feld feld-halb">
+        <span>Vorname</span>
+        <input type="text" id="f-vorname" autocomplete="given-name" enterkeyhint="next">
+      </label>
+      <label class="feld feld-halb">
+        <span>Nachname</span>
+        <input type="text" id="f-nachname" autocomplete="family-name" enterkeyhint="next">
+      </label>
+      <label class="feld feld-halb">
+        <span>Personalnummer</span>
+        <!-- inputmode=numeric holt auf dem Handy die Zifferntastatur, ohne
+             type=number: dessen Pfeile und Exponentialschreibweise sind bei
+             einer Nummer (nicht: Zahl) nur im Weg. -->
+        <input type="text" id="f-personalnummer" inputmode="numeric" pattern="[0-9]*" enterkeyhint="next">
+      </label>
+      <label class="feld feld-halb">
+        <span>Abteilung</span>
+        <input type="text" id="f-abteilung" enterkeyhint="next">
+      </label>
+      <label class="feld">
+        <span>Gruppenleitung</span>
+        <input type="text" id="f-gl-name" autocomplete="name" enterkeyhint="next">
+      </label>
+      <label class="feld">
+        <span>E-Mail der Gruppenleitung</span>
+        <input type="email" id="f-gl-email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" enterkeyhint="done">
+      </label>
+      <div class="feld-aktionen">
+        <button type="button" class="textknopf" id="knopf-profil-neu">Neues Profil</button>
+        <button type="button" class="textknopf" id="knopf-profil-duplizieren">Duplizieren</button>
+        <button type="button" class="textknopf textknopf-warnend" id="knopf-profil-loeschen">Löschen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Vorgang                                                            -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="block">
+    <div class="block-kopf"><h2>Vorgang</h2></div>
+    <div class="felder">
+      <label class="feld">
+        <span>Einsatzart</span>
+        <input type="text" id="f-einsatzart" list="einsatzarten" enterkeyhint="done" placeholder="z. B. Montage">
+        <datalist id="einsatzarten"></datalist>
+      </label>
+      <div class="feld">
+        <span class="feld-name">Reisetyp</span>
+        <div class="umschalter" role="radiogroup" aria-label="Reisetyp">
+          <button type="button" role="radio" aria-checked="true" data-reisetyp="inland">Inland</button>
+          <button type="button" role="radio" aria-checked="false" data-reisetyp="ausland">Ausland</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Reisetage — das Herzstueck                                          -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="block" id="reisetage">
+    <div class="block-kopf">
+      <h2>Reisetage</h2>
+      <span class="zaehler" id="zeilen-zaehler">0 von 14</span>
+    </div>
+    <div id="zeilen-liste"></div>
+    <div class="zeilen-aktionen">
+      <button type="button" class="knopf-zweit" id="knopf-zeile-neu">Reisetag hinzufügen</button>
+      <button type="button" class="knopf-zweit" id="knopf-folgezeile">Folgezeile</button>
+    </div>
+    <p class="hinweis" id="arbeitszeit-hinweis" hidden></p>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Abschluss                                                          -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="block" id="abschluss">
+    <div class="block-kopf"><h2>Abschluss</h2></div>
+
+    <div class="feld">
+      <span class="feld-name">Datei</span>
+      <div class="umschalter umschalter-drei" role="radiogroup" aria-label="Woher kommt die Datei">
+        <button type="button" role="radio" aria-checked="true" data-modus="neu">Neue Datei</button>
+        <button type="button" role="radio" aria-checked="false" data-modus="ergaenzen">Ergänzen</button>
+        <button type="button" role="radio" aria-checked="false" data-modus="nur_versenden">Nur senden</button>
+      </div>
+    </div>
+
+    <div id="seite-neu">
+      <p class="zusammenfassung">Entsteht als <span class="dateiname" id="dateiname-vorschau">—</span></p>
+    </div>
+
+    <div id="seite-zieldatei" hidden>
+      <label class="feld">
+        <span>Vorhandene Liste auswählen</span>
+        <input type="file" id="f-zieldatei" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      </label>
+      <p class="zusammenfassung" id="zieldatei-info">Noch keine Datei gewählt.</p>
+    </div>
+
+    <label class="schalter">
+      <input type="checkbox" id="f-mail-mitsenden" checked>
+      <span>Nach dem Erzeugen ans Teilen-Menü übergeben</span>
+    </label>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Einstellungen                                                      -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="block" id="einstellungen" hidden>
+    <div class="block-kopf">
+      <h2>Einstellungen</h2>
+      <button type="button" class="textknopf" data-schliessen="einstellungen">Fertig</button>
+    </div>
+    <div class="felder">
+      <label class="feld">
+        <span>Empfänger</span>
+        <input type="email" id="f-empfaenger" inputmode="email" autocapitalize="off" spellcheck="false">
+      </label>
+      <label class="feld">
+        <span>Betreff</span>
+        <input type="text" id="f-betreff-vorlage">
+      </label>
+      <label class="feld">
+        <span>Mailtext</span>
+        <textarea id="f-body-vorlage" rows="8"></textarea>
+      </label>
+      <p class="zusammenfassung">Platzhalter: <code>{name}</code> <code>{zeitraum}</code> <code>{einsatzart}</code> <code>{personalnummer}</code> <code>{abteilung}</code></p>
+      <div class="feld-aktionen">
+        <button type="button" class="textknopf" id="knopf-vorlagen-zuruecksetzen">Vorlagen zurücksetzen</button>
+        <button type="button" class="textknopf textknopf-warnend" id="knopf-daten-loeschen">Alle Daten auf diesem Gerät löschen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Selbsttest: beantwortet auf dem echten Geraet die Frage, ob es      -->
+  <!-- dort wirklich laeuft — statt es zu behaupten.                       -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="block" id="selbsttest" hidden>
+    <div class="block-kopf">
+      <h2>Selbsttest</h2>
+      <button type="button" class="textknopf" data-schliessen="selbsttest">Fertig</button>
+    </div>
+    <p class="zusammenfassung">Prüft auf diesem Gerät, ob alles vorhanden ist, was die App zum Arbeiten ohne Netz braucht.</p>
+    <ol class="pruefliste" id="pruefliste"></ol>
+    <div class="feld-aktionen">
+      <button type="button" class="knopf-zweit" id="knopf-selbsttest-start">Prüfung starten</button>
+      <button type="button" class="textknopf" id="knopf-selbsttest-teilen" hidden>Ergebnis teilen</button>
+    </div>
+    <p class="zusammenfassung" id="geraet-angaben"></p>
+  </section>
+
+  <!-- Platz, damit die feste Aktionsleiste nichts verdeckt -->
+  <div class="leiste-platzhalter" aria-hidden="true"></div>
+</main>
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Aktionsleiste: genau eine farbige Schaltflaeche, wie im Design-Konzept. -->
+<!-- ---------------------------------------------------------------------- -->
+<footer class="aktionsleiste" id="aktionsleiste">
+  <p class="leiste-meldung" id="leiste-meldung" role="status" aria-live="polite">Wird vorbereitet …</p>
+  <button type="button" class="knopf-haupt" id="knopf-abschluss" disabled>Excel erzeugen &amp; teilen</button>
+</footer>
+
+<!-- Einmaliger Hinweis auf iOS, wie man die App auf den Home-Bildschirm holt -->
+<div class="anstupser" id="ios-anstupser" hidden>
+  <p><strong>Auf den Home-Bildschirm legen.</strong> Erst dann arbeitet die App ohne Netz weiter und behält deine Daten.</p>
+  <p class="anstupser-weg">Tippe unten auf <span class="teilen-symbol" aria-hidden="true"></span> <em>Teilen</em> und dann auf <em>Zum Home-Bildschirm</em>.</p>
+  <button type="button" class="textknopf" id="knopf-anstupser-weg">Verstanden</button>
+</div>
+
+<!-- ---------------------------------------------------------------------- -->
+<!-- Vorlage einer Reisetag-Karte                                           -->
+<!-- ---------------------------------------------------------------------- -->
+<template id="vorlage-reisetag">
+  <article class="tag">
+    <div class="tag-kopf">
+      <span class="tag-nummer"></span>
+      <input type="date" class="tag-datum" aria-label="Datum des Reisetags">
+      <button type="button" class="tag-menue" aria-label="Weitere Aktionen für diesen Reisetag" aria-expanded="false">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="3" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="8" cy="13" r="1.4"/></svg>
+      </button>
+    </div>
+
+    <!-- Das Tagesband: zeigt die Gestalt des Tages, nicht nur seine Zahlen. -->
+    <div class="band" aria-hidden="true"><div class="band-spur"></div></div>
+
+    <div class="paare">
+      <div class="paar" data-art="passiv">
+        <span class="paar-name">Passiv</span>
+        <input type="time" class="zeit" data-feld="passiv_von" aria-label="Passive Reisezeit von">
+        <span class="bis">–</span>
+        <input type="time" class="zeit" data-feld="passiv_bis" aria-label="Passive Reisezeit bis">
+      </div>
+      <div class="paar" data-art="aktiv">
+        <span class="paar-name">Aktiv</span>
+        <input type="time" class="zeit" data-feld="aktiv_von" aria-label="Aktive Reisezeit von">
+        <span class="bis">–</span>
+        <input type="time" class="zeit" data-feld="aktiv_bis" aria-label="Aktive Reisezeit bis">
+      </div>
+      <div class="paar" data-art="arbeit">
+        <span class="paar-name">Arbeit</span>
+        <input type="time" class="zeit" data-feld="arbeit_von" aria-label="Arbeitszeit von">
+        <span class="bis">–</span>
+        <input type="time" class="zeit" data-feld="arbeit_bis" aria-label="Arbeitszeit bis">
+      </div>
+      <div class="paar paar-grenze" data-art="grenze" hidden>
+        <span class="paar-name">Grenze</span>
+        <input type="time" class="zeit" data-feld="grenz_anreise" aria-label="Grenzübertritt Anreise">
+        <span class="bis">–</span>
+        <input type="time" class="zeit" data-feld="grenz_rueckreise" aria-label="Grenzübertritt Rückreise">
+      </div>
+    </div>
+
+    <ul class="tag-meldungen"></ul>
+
+    <div class="tag-aktionen" hidden>
+      <button type="button" data-tat="duplizieren">Duplizieren</button>
+      <button type="button" data-tat="hoch">Nach oben</button>
+      <button type="button" data-tat="runter">Nach unten</button>
+      <button type="button" data-tat="entfernen" class="warnend">Entfernen</button>
+    </div>
+  </article>
+</template>
+
+<script src="vendor/pyodide/pyodide.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

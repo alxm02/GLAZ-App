@@ -1,0 +1,41 @@
+{
+  "id": "./",
+  "name": "GLAZ-Korrekturbuchungsliste",
+  "short_name": "GLAZ",
+  "description": "Dienstreise-Zeiten erfassen und die GLAZ-Korrekturbuchungsliste als Excel-Datei erzeugen - vollstaendig offline auf dem Handy.",
+  "lang": "de",
+  "dir": "ltr",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#060E1A",
+  "theme_color": "#060E1A",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
