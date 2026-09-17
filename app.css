@@ -75,6 +75,27 @@
   /* Mindesthoehe einer Tippflaeche. Apples eigene Empfehlung sind 44 pt. */
   --tippflaeche: 44px;
 
+  /* ---- Liquid Glass ------------------------------------------------------
+     Jede Schaltflaeche ist eine Glaslinse ueber dem Grund: durchscheinende
+     Fuellung mit Verlauf, dahinter weichgezeichnet und gesaettigt, oben eine
+     helle Lichtkante, unten eine dunkle, darunter ein weicher Schein. Die
+     Werte stehen hier als eigene Tokens, damit dunkel und hell dieselbe
+     Rezeptur mit anderen Zutaten fahren. Nur die Primaeraktion traegt Farbe
+     im Glas -- alles andere ist klares Glas ueber Tiefblau. */
+  --glas-fuellung: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.045));
+  --glas-fuellung-tief: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025));
+  --glas-linie: rgba(255, 255, 255, 0.16);
+  --glas-licht: rgba(255, 255, 255, 0.30);
+  --glas-dunkelkante: rgba(0, 0, 0, 0.30);
+  --glas-schein: 0 12px 32px -14px rgba(0, 0, 0, 0.65);
+  --glas-glanz: radial-gradient(120% 90% at 18% -20%, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 55%);
+  --glas-filter: blur(18px) saturate(160%);
+  --akzent-glas: linear-gradient(180deg, rgba(0, 212, 244, 0.36), rgba(0, 190, 220, 0.20));
+  --akzent-glas-linie: rgba(0, 212, 244, 0.55);
+  --akzent-glas-schein: 0 12px 30px -8px rgba(0, 190, 220, 0.45);
+  --radius-pille: 999px;
+  --radius-glas: 14px;
+
   /* Die sichere Zone des Geraets, einmal aufgeloest und dann ueberall nutzbar */
   --sicher-oben: env(safe-area-inset-top, 0px);
   --sicher-unten: env(safe-area-inset-bottom, 0px);
@@ -161,6 +182,20 @@
   --warnung: #A8630A;
   --info: #1A5FA8;
 
+  /* Helles Glas: Weiss ueber Hellgrau traegt keinen Verlauf aus Licht,
+     sondern aus Deckung -- die Lichtkante ist fast reines Weiss, die
+     Trennung uebernimmt eine dunkle Haarkante. */
+  --glas-fuellung: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.58));
+  --glas-fuellung-tief: linear-gradient(180deg, rgba(255, 255, 255, 0.70), rgba(255, 255, 255, 0.45));
+  --glas-linie: rgba(11, 27, 46, 0.11);
+  --glas-licht: rgba(255, 255, 255, 0.95);
+  --glas-dunkelkante: rgba(11, 27, 46, 0.07);
+  --glas-schein: 0 12px 28px -14px rgba(11, 27, 46, 0.28);
+  --glas-glanz: radial-gradient(120% 90% at 18% -20%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 55%);
+  --akzent-glas: linear-gradient(180deg, rgba(0, 160, 187, 0.26), rgba(0, 137, 160, 0.16));
+  --akzent-glas-linie: rgba(0, 137, 160, 0.45);
+  --akzent-glas-schein: 0 12px 26px -10px rgba(0, 137, 160, 0.40);
+
   color-scheme: light;
 }
 
@@ -195,9 +230,92 @@ body {
   padding-right: var(--sicher-rechts);
 }
 
-h1, h2 { margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+/* Glas braucht etwas, das es brechen kann. Ueber einer voellig gleichmaessigen
+   Flaeche saehe eine weichgezeichnete Scheibe aus wie eine matte -- deshalb
+   liegen unter der Oberflaeche zwei sehr leise Lichtscheine, einer in Cyan
+   oben rechts, einer in Blau unten links. Als festes Pseudo-Element statt
+   background-attachment: fixed, das iOS beim Scrollen nicht mitnimmt. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(70% 45% at 85% -10%, rgba(0, 190, 220, 0.16), rgba(0, 190, 220, 0) 65%),
+    radial-gradient(60% 40% at 5% 105%, rgba(74, 144, 217, 0.14), rgba(74, 144, 217, 0) 65%);
+}
+:root[data-thema="hell"] body::before {
+  background:
+    radial-gradient(70% 45% at 85% -10%, rgba(0, 137, 160, 0.12), rgba(0, 137, 160, 0) 65%),
+    radial-gradient(60% 40% at 5% 105%, rgba(26, 95, 168, 0.10), rgba(26, 95, 168, 0) 65%);
+}
+
+h1, h2 { margin: 0; font-weight: 600; letter-spacing: -0.015em; }
 h1 { font-size: var(--fs-titel); }
 h2 { font-size: var(--fs-sm); font-weight: 600; color: var(--text-zweit); }
+
+/* --------------------------------------------------------------------------
+   Die Glaslinse. Ein Rezept fuer jede Schaltflaeche und jede schwebende
+   Flaeche der Oberflaeche, damit alle aus demselben Material sind:
+     1. Fuellung: durchscheinender Verlauf, hell oben, dunkler unten.
+     2. Dahinter: der Grund wird weichgezeichnet und leicht gesaettigt --
+        das ist der Unterschied zwischen "halbtransparent" und "Glas".
+     3. Kanten: eine Haarlinie aussen, innen oben eine Lichtkante und unten
+        eine dunkle Kante. Sie geben der Scheibe Dicke.
+     4. Glanz: ein weicher Lichtfleck oben links (::before), als laege eine
+        Lichtquelle schraeg ueber dem Bildschirm.
+     5. Schein: ein weicher Schatten darunter, damit sie ueber dem Grund
+        schwebt statt darin zu liegen.
+   Die Selektoren stehen hier gesammelt; die Regeln der einzelnen Elemente
+   weiter unten setzen nur noch Mass, Schriftgrad und Farbe.
+   -------------------------------------------------------------------------- */
+.kopf-knopf, .knopf-zweit, .knopf-haupt, .textknopf, .tag-menue,
+.tag-aktionen button, .menue, .anstupser, .umschalter,
+.fortschritt-segmente button[data-stand="aktuell"] {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--glas-fuellung);
+  border: 1px solid var(--glas-linie);
+  box-shadow:
+    inset 0 1px 0 var(--glas-licht),
+    inset 0 -1px 0 var(--glas-dunkelkante),
+    var(--glas-schein);
+  backdrop-filter: var(--glas-filter);
+  -webkit-backdrop-filter: var(--glas-filter);
+}
+.kopf-knopf::before, .knopf-zweit::before, .knopf-haupt::before,
+.textknopf::before, .tag-menue::before, .tag-aktionen button::before,
+.menue::before, .anstupser::before, .umschalter::before,
+.fortschritt-segmente button[data-stand="aktuell"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--glas-glanz);
+  pointer-events: none;
+}
+
+/* Wer Transparenz abgeschaltet hat oder einen Browser ohne backdrop-filter
+   benutzt, bekommt deckendes Glas: dieselbe Form, ohne Durchblick. */
+@supports not (backdrop-filter: blur(1px)) {
+  .kopf-knopf, .knopf-zweit, .knopf-haupt, .textknopf, .tag-menue,
+  .tag-aktionen button, .menue, .anstupser, .umschalter,
+  .fortschritt-segmente button[data-stand="aktuell"] {
+    background: var(--bg-erhaben);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .kopf-knopf, .knopf-zweit, .knopf-haupt, .textknopf, .tag-menue,
+  .tag-aktionen button, .menue, .anstupser, .umschalter,
+  .fortschritt-segmente button[data-stand="aktuell"],
+  .kopf, .aktionsleiste {
+    background: var(--bg-erhaben);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
 
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -233,10 +351,12 @@ code {
   padding: 10px 16px 0;
   padding-top: calc(var(--sicher-oben) + 10px);
   background: var(--bg-tief);
-  background: color-mix(in srgb, var(--bg-tief) 88%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid var(--rand-zart);
+  background: color-mix(in srgb, var(--bg-tief) 82%, transparent);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  /* Keine Haarlinie mehr: Die weichgezeichnete Flaeche trennt sich beim
+     Scrollen von selbst vom Inhalt. Eine Linie, die nur da ist, wenn
+     nichts darunterliegt, hat nichts zu sagen. */
 }
 
 .kopf-zeile {
@@ -302,23 +422,26 @@ code {
 .fortschritt-segmente button {
   width: 100%;
   min-height: 34px;
-  padding: 4px 2px 2px;
+  padding: 4px 6px 2px;
   font: inherit;
   font-size: var(--fs-xs);
   color: var(--text-schwach);
   background: none;
-  border: 0;
-  border-radius: var(--radius-klein);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pille);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.fortschritt-segmente button:active { background: var(--bg-sanft); }
+.fortschritt-segmente button:active { background: var(--glas-fuellung-tief); }
 .fortschritt-segmente button[data-stand="fertig"] { color: var(--text-zweit); }
+/* Der aktuelle Schritt sitzt in einer kleinen Glaspille -- die Leiste zeigt
+   damit nicht nur "wie weit", sondern auch "wo", ohne ein zweites Zeichen. */
 .fortschritt-segmente button[data-stand="aktuell"] {
   color: var(--text);
   font-weight: 600;
+  padding-top: 2px;
 }
 /* Ein Schritt mit offenen Fehlern: roter Punkt hinter dem Namen. Kein roter
    Balken -- Signalfarbe nur als Text und Rand, nie als Flaeche
@@ -351,10 +474,7 @@ code {
   font: inherit;
   font-size: var(--fs-xs);
   color: var(--text-zweit);
-  background: var(--bg-sanft);
-  border: 1px solid var(--glas-rand);
-  border-top-color: var(--glas-kante);
-  border-radius: 999px;
+  border-radius: var(--radius-pille);
   cursor: pointer;
 }
 
@@ -379,27 +499,23 @@ code {
   left: auto;
   width: min(280px, calc(100vw - 24px));
   padding: 6px;
-  background: var(--bg-erhaben);
-  border: 1px solid var(--glas-rand);
-  border-top-color: var(--glas-kante);
-  border-radius: var(--radius-mittel);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  border-radius: var(--radius-gross);
 }
 .menue button {
   display: block;
   width: 100%;
   min-height: var(--tippflaeche);
-  padding: 0 12px;
+  padding: 0 14px;
   text-align: left;
   font: inherit;
   font-size: var(--fs-sm);
   color: var(--text);
   background: none;
   border: 0;
-  border-radius: var(--radius-klein);
+  border-radius: var(--radius-glas);
   cursor: pointer;
 }
-.menue button:active { background: var(--bg-sanft); }
+.menue button:active { background: var(--glas-fuellung-tief); }
 .menue-fuss {
   margin: 4px 0 2px;
   padding: 0 12px;
@@ -415,9 +531,8 @@ code {
 .menue-thema {
   display: grid;
   gap: 7px;
-  margin-top: 4px;
+  margin-top: 8px;
   padding: 10px 12px 4px;
-  border-top: 1px solid var(--rand-zart);
 }
 .menue-thema > span {
   font-size: var(--fs-xs);
@@ -433,14 +548,9 @@ code {
    -------------------------------------------------------------------------- */
 main { padding: 0 16px; }
 
-.block {
-  padding: 22px 0;
-  border-bottom: 1px solid var(--rand-zart);
-}
-.block:last-of-type { border-bottom: 0; }
-/* Von den Schritten ist immer genau einer zu sehen -- eine Trennlinie unter
-   ihm haette nichts mehr zu trennen. */
-.schritt { border-bottom: 0; }
+/* Keine Trennlinien: Von den Schritten ist immer genau einer zu sehen, und
+   die Sonderseiten stehen ebenfalls allein. Gliederung kommt aus der Luft. */
+.block { padding: 24px 0; }
 
 .block-kopf {
   display: flex;
@@ -518,10 +628,13 @@ input[type="time"], input[type="file"], select, textarea {
   font: inherit;
   font-size: var(--fs-base);
   color: var(--text);
-  background: var(--bg-sanft);
-  border: 1px solid var(--glas-rand);
-  border-top-color: var(--glas-kante);
-  border-radius: var(--radius-mittel);
+  /* Eingabefelder sind Vertiefungen im Glas, keine Linsen: eine ruhige
+     Flaeche mit einer Haarlinie, damit die Schaltflaechen die einzigen
+     Elemente bleiben, die aus dem Grund heraustreten. */
+  background: var(--glas-fuellung-tief);
+  border: 1px solid var(--glas-linie);
+  border-radius: var(--radius-glas);
+  box-shadow: inset 0 1px 0 var(--glas-licht);
   /* Ohne das gibt iOS jedem Feld seinen eigenen Innenschatten und
      ueberschreibt die Hintergrundfarbe mit Weiss. */
   -webkit-appearance: none;
@@ -566,14 +679,20 @@ input[data-warnung="true"] { border-color: var(--warnung); }
 /* --------------------------------------------------------------------------
    Schaltflaechen
    -------------------------------------------------------------------------- */
+/* Textknoepfe sind die leisesten Schaltflaechen: dasselbe Glas, aber ohne
+   Schein und mit der tieferen Fuellung, damit sie neben einer Ueberschrift
+   nicht um Aufmerksamkeit bitten. */
 .textknopf {
   min-height: 34px;
-  padding: 0 4px;
+  padding: 0 14px;
   font: inherit;
   font-size: var(--fs-sm);
   color: var(--akzent);
-  background: none;
-  border: 0;
+  background: var(--glas-fuellung-tief);
+  border-radius: var(--radius-pille);
+  box-shadow:
+    inset 0 1px 0 var(--glas-licht),
+    inset 0 -1px 0 var(--glas-dunkelkante);
   cursor: pointer;
 }
 .textknopf-warnend { color: var(--fehler); }
@@ -585,22 +704,22 @@ input[data-warnung="true"] { border-color: var(--warnung); }
 .feld-aktionen .textknopf,
 .zeilen-aktionen .textknopf {
   min-height: var(--tippflaeche);
-  padding: 0 10px;
+  padding: 0 16px;
 }
 
 .knopf-zweit {
   min-height: var(--tippflaeche);
-  padding: 0 16px;
+  padding: 0 18px;
   font: inherit;
   font-size: var(--fs-sm);
-  color: var(--text-zweit);
-  background: var(--bg-sanft);
-  border: 1px solid var(--glas-rand);
-  border-top-color: var(--glas-kante);
-  border-radius: var(--radius-mittel);
+  color: var(--text);
+  border-radius: var(--radius-pille);
   cursor: pointer;
 }
-.knopf-zweit:active { background: var(--bg-erhaben); }
+.knopf-zweit:active, .kopf-knopf:active, .tag-menue:active,
+.tag-aktionen button:active, .textknopf:active {
+  background: var(--glas-fuellung-tief);
+}
 
 .feld-aktionen, .zeilen-aktionen {
   display: flex;
@@ -610,14 +729,17 @@ input[data-warnung="true"] { border-color: var(--warnung); }
 }
 .zeilen-aktionen { margin-top: 14px; }
 
+/* Der Umschalter ist eine Glasschiene; die gewaehlte Option liegt als
+   zweite, hellere Scheibe darauf. */
 .umschalter {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 3px;
   padding: 3px;
-  background: var(--bg-sanft);
-  border: 1px solid var(--glas-rand);
-  border-radius: var(--radius-mittel);
+  border-radius: var(--radius-pille);
+  box-shadow:
+    inset 0 1px 0 var(--glas-licht),
+    inset 0 -1px 0 var(--glas-dunkelkante);
 }
 .umschalter-drei { grid-template-columns: repeat(3, 1fr); }
 .umschalter button {
@@ -631,23 +753,24 @@ input[data-warnung="true"] { border-color: var(--warnung); }
   color: var(--text-schwach);
   background: none;
   border: 0;
-  border-radius: var(--radius-klein);
+  border-radius: var(--radius-pille);
   cursor: pointer;
 }
 .umschalter button[aria-checked="true"] {
   color: var(--text);
-  background: var(--bg-erhaben);
-  box-shadow: 0 1px 0 var(--glas-kante) inset;
+  background: var(--glas-fuellung);
+  box-shadow:
+    inset 0 1px 0 var(--glas-licht),
+    var(--glas-schein);
 }
 
 /* --------------------------------------------------------------------------
    Reisetag
    -------------------------------------------------------------------------- */
-.tag {
-  padding: 14px 0 16px;
-  border-top: 1px solid var(--rand-zart);
-}
-.tag:first-child { border-top: 0; padding-top: 4px; }
+/* Reisetage trennen sich durch Luft, nicht durch Linien. 28 px sind genug,
+   dass das naechste Datumsfeld als neuer Anfang gelesen wird. */
+.tag { padding: 4px 0 28px; }
+.tag:last-child { padding-bottom: 8px; }
 
 .tag-kopf {
   display: flex;
@@ -668,11 +791,9 @@ input[data-warnung="true"] { border-color: var(--warnung); }
   height: var(--tippflaeche);
   display: grid;
   place-items: center;
-  color: var(--text-schwach);
+  color: var(--text-zweit);
   fill: currentColor;
-  background: none;
-  border: 0;
-  border-radius: var(--radius-klein);
+  border-radius: 50%;
   cursor: pointer;
 }
 
@@ -787,13 +908,11 @@ input[data-warnung="true"] { border-color: var(--warnung); }
 }
 .tag-aktionen button {
   min-height: var(--tippflaeche);
-  padding: 0 13px;
+  padding: 0 16px;
   font: inherit;
   font-size: var(--fs-sm);
-  color: var(--text-zweit);
-  background: var(--bg-sanft);
-  border: 1px solid var(--glas-rand);
-  border-radius: var(--radius-klein);
+  color: var(--text);
+  border-radius: var(--radius-pille);
   cursor: pointer;
 }
 .tag-aktionen button.warnend { color: var(--fehler); }
@@ -815,10 +934,10 @@ input[data-warnung="true"] { border-color: var(--warnung); }
   padding-left: calc(var(--sicher-links) + 16px);
   padding-right: calc(var(--sicher-rechts) + 16px);
   background: var(--bg-tief);
-  background: color-mix(in srgb, var(--bg-tief) 92%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-top: 1px solid var(--rand-zart);
+  background: color-mix(in srgb, var(--bg-tief) 82%, transparent);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  /* Wie die Kopfzeile: ohne Haarlinie. Der Blur trennt. */
 }
 
 .leiste-meldung {
@@ -850,31 +969,45 @@ input[data-warnung="true"] { border-color: var(--warnung); }
 .leiste-knoepfe .knopf-zweit {
   flex: none;
   min-height: 52px;
-  padding: 0 18px;
+  padding: 0 20px;
 }
 .leiste-knoepfe .knopf-zweit:disabled {
   color: var(--text-schwach);
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 .leiste-knoepfe .knopf-haupt { flex: 1; }
 
+/* Die eine farbige Schaltflaeche: getoentes Glas. Die Farbe sitzt in der
+   Scheibe, nicht als Deckfarbe darauf -- so bleibt sie aus demselben
+   Material wie alles andere und ist trotzdem unverwechselbar die Aktion,
+   um die es geht. Der Schein darunter ist der einzige farbige Schatten der
+   Oberflaeche. */
 .knopf-haupt {
   width: 100%;
   min-height: 52px;
   font: inherit;
   font-size: var(--fs-base);
-  font-weight: 700;
-  color: var(--auf-akzent);
-  background: var(--akzent);
-  border: 0;
-  border-radius: var(--radius-mittel);
+  font-weight: 600;
+  color: var(--text);
+  background: var(--akzent-glas);
+  border-color: var(--akzent-glas-linie);
+  border-radius: var(--radius-pille);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    var(--akzent-glas-schein);
   cursor: pointer;
 }
-.knopf-haupt:active { background: var(--akzent-hover); }
+:root[data-thema="hell"] .knopf-haupt { color: var(--akzent); }
+.knopf-haupt:active { filter: brightness(1.12); }
 .knopf-haupt:disabled {
   color: var(--text-schwach);
-  background: var(--bg-erhaben);
+  background: var(--glas-fuellung-tief);
+  border-color: var(--glas-linie);
+  box-shadow:
+    inset 0 1px 0 var(--glas-licht),
+    inset 0 -1px 0 var(--glas-dunkelkante);
   cursor: default;
 }
 .knopf-haupt[data-laeuft="true"] { color: var(--text-schwach); }
@@ -891,11 +1024,7 @@ input[data-warnung="true"] { border-color: var(--warnung); }
      .leiste-platzhalter freihaelt. */
   bottom: calc(var(--sicher-unten) + 108px + 12px);
   padding: 16px;
-  background: var(--bg-erhaben);
-  border: 1px solid var(--glas-rand);
-  border-top-color: var(--glas-kante);
   border-radius: var(--radius-gross);
-  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.5);
 }
 .anstupser p { margin: 0 0 8px; font-size: var(--fs-sm); color: var(--text-zweit); }
 .anstupser strong { color: var(--text); }
@@ -931,8 +1060,7 @@ input[data-warnung="true"] { border-color: var(--warnung); }
   grid-template-columns: 22px 1fr;
   gap: 10px;
   align-items: start;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--rand-zart);
+  padding: 10px 0;
   font-size: var(--fs-sm);
 }
 .pruefliste li::before {
@@ -1000,5 +1128,6 @@ input[data-warnung="true"] { border-color: var(--warnung); }
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: no-preference) {
   .band-teil { transition: left 140ms ease, width 140ms ease; }
-  .knopf-haupt { transition: background-color 120ms ease; }
+  .knopf-haupt { transition: filter 120ms ease; }
+  .fortschritt-fuellung { transition: width 220ms ease; }
 }
