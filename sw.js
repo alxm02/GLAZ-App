@@ -8,14 +8,14 @@
  * beim ersten Besuch JEDE Datei der App in den Cache und bedient danach jede
  * Anfrage aus diesem Cache.
  *
- * ACHTUNG: Diese Datei ist eine Vorlage. Die Platzhalter 1.1.0+747a42641b und
+ * ACHTUNG: Diese Datei ist eine Vorlage. Die Platzhalter 1.1.0+b30175b2fa und
  * [
   "./",
   "./index.html",
   "./app.css",
   "./app.js",
-  "./fonts/Manrope.ttf",
-  "./fonts/OFL.txt",
+  "./fonts/Antonio-OFL.txt",
+  "./fonts/Antonio.ttf",
   "./gruppenleiter.js",
   "./icons/app-icon.svg",
   "./icons/apple-touch-icon.png",
@@ -50,7 +50,7 @@
  */
 
 /** Versionsstempel aus version.json: Anwendungsversion + Inhaltskuerzel. */
-const VERSION = "1.1.0+747a42641b";
+const VERSION = "1.1.0+b30175b2fa";
 
 /*
  * Der Cache-Name traegt die Version. Dadurch legt jeder neue Build einen
@@ -72,8 +72,8 @@ const PRECACHE = [
   "./index.html",
   "./app.css",
   "./app.js",
-  "./fonts/Manrope.ttf",
-  "./fonts/OFL.txt",
+  "./fonts/Antonio-OFL.txt",
+  "./fonts/Antonio.ttf",
   "./gruppenleiter.js",
   "./icons/app-icon.svg",
   "./icons/apple-touch-icon.png",

@@ -40,14 +40,17 @@
    ========================================================================== */
 
 @font-face {
-  font-family: "Manrope";
-  /* Manrope ist eine variable Schrift mit der Achse wght von 200 bis 800.
-     Zweimal dieselbe Datei mit unterschiedlicher Formatangabe: WebKit wollte
-     historisch "truetype-variations", neuere Browser verstehen "truetype".
-     Der Browser nimmt den ersten Eintrag, dessen Format er kennt. */
-  src: url("fonts/Manrope.ttf") format("truetype-variations"),
-       url("fonts/Manrope.ttf") format("truetype");
-  font-weight: 200 800;
+  font-family: "Antonio";
+  /* Antonio (Google Fonts, SIL Open Font License) ist eine schmale, hohe
+     Grotesk -- variable Schrift mit der Achse wght von 100 bis 700. Die
+     Handy-Fassung faehrt sie durchgehend; die Desktop-App bleibt bei Manrope
+     (glaz/ui/theme.py). Zweimal dieselbe Datei mit unterschiedlicher
+     Formatangabe: WebKit wollte historisch "truetype-variations", neuere
+     Browser verstehen "truetype". Der Browser nimmt den ersten Eintrag,
+     dessen Format er kennt. */
+  src: url("fonts/Antonio.ttf") format("truetype-variations"),
+       url("fonts/Antonio.ttf") format("truetype");
+  font-weight: 100 700;
   font-display: swap;
 }
 
@@ -89,7 +92,9 @@
   --fs-base: 16px;   /* 16 statt 14: unter 16 px zoomt iOS beim Tippen hinein */
   --fs-titel: 20px;
 
-  --schrift: "Manrope", "Helvetica Neue", "Segoe UI Variable", "Segoe UI",
+  /* Antonio zuerst; die Ersatzkette dahinter ist dieselbe wie in der
+     Desktop-App (tests/test_web_tokens.py prueft genau das). */
+  --schrift: "Antonio", "Helvetica Neue", "Segoe UI Variable", "Segoe UI",
              -apple-system, system-ui, sans-serif;
 
   /* Mindesthoehe einer Tippflaeche. Apples eigene Empfehlung sind 44 pt. */
@@ -260,11 +265,15 @@ body {
   margin: 0;
   font-family: var(--schrift);
   font-size: var(--fs-base);
-  /* Ausdruecklich 400: Manropes Vorgabe-Instanz ist 200 (ExtraLight). Wendet
-     ein Browser die Gewichtsachse nicht an, stuende die ganze Oberflaeche
-     sonst in Haarstrichen da. */
+  /* Ausdruecklich 400: Antonios Vorgabe-Instanz ist 100 (Thin). Wendet ein
+     Browser die Gewichtsachse nicht an, stuende die ganze Oberflaeche sonst
+     in Haarstrichen da. */
   font-weight: 400;
-  line-height: 1.45;
+  /* Antonio ist schmal und hoch. Ein Hauch Laufweite haelt die engen Buchstaben
+     auseinander, und die etwas groessere Zeilenhoehe gibt den hohen
+     Oberlaengen Luft -- sonst stehen zwei Zeilen Fliesstext wie ein Block. */
+  letter-spacing: 0.018em;
+  line-height: 1.5;
   color: var(--text);
   background: var(--bg-tief);
   /* Kein Gummiband-Scrollen ueber die Raender — das laesst eine installierte
@@ -298,9 +307,16 @@ body::before {
     linear-gradient(180deg, var(--bg-tief), var(--bg));
 }
 
-h1, h2 { margin: 0; font-weight: 600; letter-spacing: -0.015em; }
-h1 { font-size: var(--fs-titel); }
-h2 { font-size: var(--fs-sm); font-weight: 600; color: var(--text-zweit); }
+/* Der Titel nutzt, was Antonio am besten kann: eine hohe, schmale Versalzeile
+   mit Luft dazwischen. Nur hier -- alle anderen Beschriftungen bleiben in
+   Gross- und Kleinschreibung. */
+h1, h2 { margin: 0; font-weight: 600; }
+h1 {
+  font-size: var(--fs-titel);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+h2 { font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.04em; color: var(--text-zweit); }
 
 /* --------------------------------------------------------------------------
    Das Material, in drei Stufen. Die Regeln der einzelnen Elemente weiter
@@ -783,6 +799,11 @@ input:focus, select:focus, textarea:focus {
   outline-offset: 2px;
 }
 input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
+/* Die Ueberschrift einer Seite bekommt beim Blaettern den Fokus, damit ein
+   Screenreader den Seitenwechsel ansagt (zeigeSchritt in app.js). Ein
+   sichtbarer Rahmen darum waere ein Rahmen um etwas, das man nicht bedienen
+   kann. */
+h2:focus { outline: none; }
 
 input[aria-invalid="true"] { border-color: var(--fehler); }
 input[data-warnung="true"] { border-color: var(--warnung); }
@@ -1024,12 +1045,14 @@ input[data-warnung="true"] { border-color: var(--warnung); }
 }
 
 /* Uhrzeiten mit Tabellenziffern: nur so stehen die Doppelpunkte in allen
-   sechs Feldern untereinander. Bei einer Liste aus Zeiten ist das kein
-   Feinschliff, sondern der Unterschied zwischen lesbar und unruhig. */
+   sechs Feldern untereinander. Antonio hat kein tnum-Merkmal, seine Ziffern
+   sind aber ohnehin gleich breit; die Angabe bleibt fuer die Ersatzschriften
+   stehen. Etwas mehr Laufweite, weil enge Ziffern in einer Zeitangabe
+   schneller verlesen werden als Buchstaben in einem Wort. */
 .zeit {
   min-width: 0;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.04em;
   text-align: center;
   padding-left: 4px;
   padding-right: 4px;
