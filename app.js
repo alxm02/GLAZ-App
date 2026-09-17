@@ -107,6 +107,23 @@ const ZEITFELDER = [
 
 const MAX_ZEILEN = 14;
 
+/* Die Seiten des Assistenten, in der Reihenfolge, in der man sie durchlaeuft.
+   Aus der einen langen Seite wurden vier kurze: Auf 390 px Breite scrollte
+   man sonst durch Profil, Vorgang und vierzehn Reisetage, bevor der
+   Abschluss ueberhaupt in Sicht kam. ``id`` ist die section in index.html,
+   ``name`` steht in der Fortschrittsleiste. Die Nummer ist der Index + 1 --
+   sie wird gespeichert und angezeigt, deshalb nicht 0-basiert. */
+const SCHRITTE = [
+  { id: "profil-block",  name: "Profil" },
+  { id: "vorgang-block", name: "Vorgang" },
+  { id: "reisetage",     name: "Reisetage" },
+  { id: "abschluss",     name: "Abschluss" },
+];
+
+/* Bereiche, die aus dem Menue heraus geoeffnet werden und nicht zum Ablauf
+   gehoeren. Sie ersetzen den aktuellen Schritt, bis "Fertig" gedrueckt wird. */
+const SONDERSEITEN = ["einstellungen", "selbsttest"];
+
 //: Ruhetext unter den Profilfeldern. Er sagt, was ohnehin passiert -- und
 //: macht damit den Speichern-Knopf zu einer Bestaetigung statt zu einer
 //: Bedingung.
@@ -164,6 +181,10 @@ const zustand = {
   zeilen: [],
   modus: "neu",
   mailMitsenden: true,
+  /* Aktuelle Seite des Assistenten (1 bis SCHRITTE.length). Wird mitgesichert,
+     damit ein Neustart -- etwa weil iOS die App im Hintergrund beendet hat --
+     dort weitergeht, wo man aufgehoert hat, und nicht wieder beim Profil. */
+  schritt: 1,
   einstellungen: {
     empfaenger: "",
     betreff_vorlage: "",
@@ -333,6 +354,9 @@ function laden() {
     if (typeof gelesen.mailMitsenden === "boolean") {
       zustand.mailMitsenden = gelesen.mailMitsenden;
     }
+    if (Number.isInteger(gelesen.schritt)) {
+      zustand.schritt = Math.min(Math.max(1, gelesen.schritt), SCHRITTE.length);
+    }
     if (Array.isArray(gelesen.gruppenleiter)) {
       zustand.gruppenleiter = gelesen.gruppenleiter
         .filter((g) => g && typeof g === "object")
@@ -385,6 +409,8 @@ async function starteKern() {
     kernBereit = true;
     setzeBereitschaft("bereit", "bereit");
     pruefeJetzt();
+    // Erst jetzt ist bekannt, ob im Profil etwas fehlt.
+    if (zustand.schritt === 1) klappeProfilAufWennUnvollstaendig();
   } catch (e) {
     kernFehler = e && e.message ? e.message : String(e);
     setzeBereitschaft("fehler", "Kern fehlt");
@@ -533,6 +559,156 @@ function zeichneBand(knoten, zeile) {
     strich.style.width = "2px";
     spur.append(strich);
   }
+}
+
+/* --------------------------------------------------------------------------
+   Assistent: Seiten, Fortschritt, Zurueck und Weiter
+   -------------------------------------------------------------------------- */
+
+/** Baut die vier antippbaren Segmente unter dem Fortschrittsbalken. Einmal beim Start. */
+function baueSegmente() {
+  const liste = el("fortschritt-segmente");
+  liste.textContent = "";
+  SCHRITTE.forEach((schritt, i) => {
+    const punkt = document.createElement("li");
+    const knopf = document.createElement("button");
+    knopf.type = "button";
+    knopf.dataset.schritt = String(i + 1);
+    knopf.textContent = schritt.name;
+    knopf.setAttribute("aria-label", `Schritt ${i + 1} von ${SCHRITTE.length}: ${schritt.name}`);
+    knopf.addEventListener("click", () => zeigeSchritt(i + 1, { fokus: true }));
+    punkt.append(knopf);
+    liste.append(punkt);
+  });
+}
+
+/**
+ * Ordnet eine Pruefmeldung der Seite zu, auf der man sie beheben kann.
+ *
+ * Die Feldnamen kommen aus glaz/validation.py: ``profil.*`` fuer das Profil,
+ * ``vorgang.einsatzart`` fuer den Vorgang, ``zeile[n].*`` und
+ * ``vorgang.zeilen`` fuer die Reisetage, ``abschluss.zieldatei`` fuer die
+ * gewaehlte Datei. Unbekanntes landet beim Abschluss -- dort steht auch die
+ * Statuszeile, die es im Klartext nennt.
+ */
+function schrittFuerIssue(issue) {
+  const feld = String(issue.feld || "");
+  if (feld.startsWith("profil.")) return 1;
+  if (feld === "vorgang.einsatzart") return 2;
+  if (feld.startsWith("zeile[") || feld === "vorgang.zeilen") return 3;
+  if (issue.zeile !== null && issue.zeile !== undefined) return 3;
+  return 4;
+}
+
+/** Fehler je Schritt aus dem letzten Pruefergebnis, als Feld [n1, n2, n3, n4]. */
+function fehlerJeSchritt(erg) {
+  const zaehler = SCHRITTE.map(() => 0);
+  if (!erg) return zaehler;
+  for (const issue of erg.issues) {
+    if (issue.schwere !== "fehler") continue;
+    zaehler[schrittFuerIssue(issue) - 1] += 1;
+  }
+  return zaehler;
+}
+
+/**
+ * Zeichnet die Fortschrittsleiste fuer den aktuellen Schritt.
+ *
+ * Der Balken fuellt sich mit ``schritt / anzahl``: Auf der letzten Seite
+ * steht er voll, weil dort die Datei entstehen kann -- das ist die Frage, die
+ * er beantwortet. Die Segmente tragen drei Zustaende (fertig, aktuell, offen)
+ * und zusaetzlich die Fehlermarkierung aus der letzten Pruefung.
+ */
+function zeichneFortschritt() {
+  const nr = zustand.schritt;
+  const anzahl = SCHRITTE.length;
+  const name = SCHRITTE[nr - 1].name;
+
+  el("fortschritt-schritt").textContent = `Schritt ${nr} von ${anzahl}`;
+  el("fortschritt-name").textContent = name;
+  el("fortschritt-fuellung").style.width = `${(nr / anzahl) * 100}%`;
+
+  const balken = el("fortschritt-balken");
+  balken.setAttribute("aria-valuenow", String(nr));
+  balken.setAttribute("aria-valuetext", `Schritt ${nr} von ${anzahl}: ${name}`);
+
+  const fehler = fehlerJeSchritt(letztePruefung);
+  alle("#fortschritt-segmente button").forEach((knopf, i) => {
+    const eigener = i + 1;
+    knopf.dataset.stand = eigener < nr ? "fertig" : eigener === nr ? "aktuell" : "offen";
+    knopf.dataset.fehler = String(fehler[i] > 0);
+    if (eigener === nr) knopf.setAttribute("aria-current", "step");
+    else knopf.removeAttribute("aria-current");
+  });
+}
+
+/**
+ * Zeigt genau eine Seite des Assistenten und blendet alles andere aus.
+ *
+ * ``fokus`` setzt den Schreibcursor auf die Ueberschrift der neuen Seite:
+ * Fuer Screenreader ist das die Ansage "du bist jetzt bei Reisetage", fuer
+ * alle anderen ist es unsichtbar. Der Bildlauf springt nach oben, damit jede
+ * Seite mit ihrer Ueberschrift beginnt und nicht mitten im Inhalt.
+ */
+function zeigeSchritt(nr, { fokus = false } = {}) {
+  nr = Math.min(Math.max(1, nr), SCHRITTE.length);
+  zustand.schritt = nr;
+
+  SCHRITTE.forEach((schritt, i) => { el(schritt.id).hidden = i + 1 !== nr; });
+  SONDERSEITEN.forEach((id) => { el(id).hidden = true; });
+
+  const letzter = nr === SCHRITTE.length;
+  el("knopf-zurueck").disabled = nr === 1;
+  el("knopf-weiter").hidden = letzter;
+  el("knopf-abschluss").hidden = !letzter;
+  el("leiste-knoepfe").hidden = false;
+  el("fortschritt").hidden = false;
+
+  zeichneFortschritt();
+  speichern();
+  if (nr === 1) klappeProfilAufWennUnvollstaendig();
+
+  window.scrollTo({ top: 0, behavior: "auto" });
+  if (fokus) {
+    const titel = el(SCHRITTE[nr - 1].id).querySelector("h2");
+    if (titel) titel.focus({ preventScroll: true });
+  }
+}
+
+/**
+ * Oeffnet die Profilfelder, wenn im Profil noch etwas fehlt.
+ *
+ * Zugeklappt zeigt Seite 1 nur die Auswahlliste und eine Zeile Text -- fuer
+ * jemanden mit fertigem Profil genau richtig, fuer den ersten Start eine fast
+ * leere Seite mit einem roten Zaehler. Aufgerufen wird das nur beim Betreten
+ * der Seite und einmal nach der ersten Pruefung, nicht bei jedem Tastendruck:
+ * Wer die Felder trotz Fehler zuklappt, soll sie nicht sofort wieder offen
+ * vorfinden.
+ */
+function klappeProfilAufWennUnvollstaendig() {
+  if (!letztePruefung) return;
+  if (fehlerJeSchritt(letztePruefung)[0] === 0) return;
+  const felder = el("profil-felder");
+  if (!felder.hidden) return;
+  felder.hidden = false;
+  el("knopf-profil-auf").setAttribute("aria-expanded", "true");
+  el("knopf-profil-auf").textContent = "Fertig";
+  zeigePruefung(letztePruefung);
+}
+
+/** Zeigt Einstellungen oder Selbsttest anstelle des aktuellen Schritts. */
+function zeigeSonderseite(id) {
+  SCHRITTE.forEach((schritt) => { el(schritt.id).hidden = true; });
+  SONDERSEITEN.forEach((andere) => { el(andere).hidden = andere !== id; });
+  // Weiter/Zurueck und die Fortschrittsleiste gehoeren zum Ablauf, nicht zu
+  // den Einstellungen -- "Schritt 4 von 4" ueber den Mailvorlagen waere eine
+  // falsche Auskunft. Die Statuszeile bleibt: Sie meldet auch hier, wenn der
+  // Kern stolpert.
+  el("leiste-knoepfe").hidden = true;
+  el("fortschritt").hidden = true;
+  window.scrollTo({ top: 0, behavior: "auto" });
+  const titel = el(id).querySelector("h2");
+  if (titel) { titel.tabIndex = -1; titel.focus({ preventScroll: true }); }
 }
 
 /* --------------------------------------------------------------------------
@@ -745,6 +921,9 @@ function zeigePruefung(erg) {
   el("kopf-zeitraum").textContent = erg.zeitraum_text || "Noch keine Zeiten erfasst";
   el("dateiname-vorschau").textContent = erg.dateiname || "—";
 
+  // Fehlermarkierungen an den Segmenten der Fortschrittsleiste nachfuehren.
+  zeichneFortschritt();
+
   const hinweis = el("arbeitszeit-hinweis");
   hinweis.hidden = !erg.hat_arbeit_vor_aktivreise;
   if (erg.hat_arbeit_vor_aktivreise) {
@@ -898,7 +1077,13 @@ async function abschluss() {
   } finally {
     knopf.textContent = beschriftungVorher;
     delete knopf.dataset.laeuft;
+    // Die Pruefung stellt den Knopf wieder scharf -- und schriebe dabei
+    // "Alles vollstaendig." ueber "Geteilt." Das Ergebnis des Laufs ist aber
+    // die Auskunft, auf die man in diesem Moment wartet; sie bleibt stehen.
+    const ergebnisText = el("leiste-meldung").textContent;
+    const ergebnisSchwere = el("leiste-meldung").dataset.schwere || "";
     pruefeJetzt();
+    if (ergebnisText) melde(ergebnisText, ergebnisSchwere);
   }
 }
 
@@ -1409,6 +1594,20 @@ function verdrahte() {
 
   el("knopf-abschluss").addEventListener("click", abschluss);
 
+  // --- Assistent: blaettern
+  el("knopf-zurueck").addEventListener("click", () =>
+    zeigeSchritt(zustand.schritt - 1, { fokus: true })
+  );
+  el("knopf-weiter").addEventListener("click", () =>
+    zeigeSchritt(zustand.schritt + 1, { fokus: true })
+  );
+  // Die Sprungmarke fuer Tastatur und Screenreader fuehrt weiterhin zu den
+  // Reisetagen -- die liegen jetzt auf Seite 3 statt weiter unten.
+  document.querySelector(".sprungmarke").addEventListener("click", (e) => {
+    e.preventDefault();
+    zeigeSchritt(3, { fokus: true });
+  });
+
   // --- Menue
   el("knopf-menue").addEventListener("click", () => {
     const menue = el("menue");
@@ -1436,19 +1635,20 @@ function verdrahte() {
         zeichneUmschalter();
         zeichneZeilen();
         aktualisiereKnopftext();
+        // Auf Seite 2, nicht auf Seite 1: Das Profil bleibt ja stehen, der
+        // neue Vorgang beginnt bei der Einsatzart.
+        zeigeSchritt(2, { fokus: true });
         nachEingabe();
         return;
       }
-      const abschnitt = el(ziel);
-      abschnitt.hidden = false;
-      abschnitt.scrollIntoView({ behavior: "smooth", block: "start" });
+      zeigeSonderseite(ziel);
     })
   );
 
   alle("[data-schliessen]").forEach((knopf) =>
     knopf.addEventListener("click", () => {
-      el(knopf.dataset.schliessen).hidden = true;
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      // "Fertig" fuehrt auf die Seite zurueck, von der man kam.
+      zeigeSchritt(zustand.schritt, { fokus: true });
     })
   );
 
@@ -1550,6 +1750,7 @@ function start() {
     });
   }
 
+  baueSegmente();
   verdrahte();
   zeichneProfil();
   zeichneEinsatzarten();
@@ -1557,6 +1758,7 @@ function start() {
   zeichneZeilen();
   zeichneEinstellungen();
   aktualisiereKnopftext();
+  zeigeSchritt(zustand.schritt);
 
   el("f-einsatzart").value = zustand.einsatzart;
   el("f-mail-mitsenden").checked = zustand.mailMitsenden;

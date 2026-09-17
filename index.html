@@ -51,14 +51,38 @@
 <a class="sprungmarke" href="#reisetage">Zu den Reisetagen springen</a>
 
 <header class="kopf">
-  <div class="kopf-titel">
-    <h1>Korrekturbuchung</h1>
-    <p class="kopf-zeitraum" id="kopf-zeitraum">Noch keine Zeiten erfasst</p>
+  <div class="kopf-zeile">
+    <div class="kopf-titel">
+      <h1>Korrekturbuchung</h1>
+      <p class="kopf-zeitraum" id="kopf-zeitraum">Noch keine Zeiten erfasst</p>
+    </div>
+    <button type="button" class="kopf-knopf" id="knopf-menue" aria-expanded="false" aria-controls="menue">
+      <span class="punkt" id="bereitschaftspunkt" data-stand="startet"></span>
+      <span class="kopf-knopf-text" id="bereitschaftstext">startet</span>
+    </button>
   </div>
-  <button type="button" class="kopf-knopf" id="knopf-menue" aria-expanded="false" aria-controls="menue">
-    <span class="punkt" id="bereitschaftspunkt" data-stand="startet"></span>
-    <span class="kopf-knopf-text" id="bereitschaftstext">startet</span>
-  </button>
+
+  <!-- Fortschrittsleiste des Assistenten. Die Liste ist in vier Seiten
+       zerlegt (Profil, Vorgang, Reisetage, Abschluss), durch die man mit
+       Zurueck und Weiter blaettert. Der Balken sagt, wo man steht, bevor die
+       Excel-Datei entstehen kann -- und jedes Segment ist zugleich ein Knopf,
+       der direkt auf seine Seite springt. Ein Segment mit offenen Fehlern
+       traegt eine rote Markierung: So sieht man auf Seite 4, dass auf Seite 1
+       noch eine Personalnummer fehlt, ohne zurueckzublaettern.
+       Die Segmente entstehen in app.js aus SCHRITTE; hier steht nur der
+       Rahmen. -->
+  <nav class="fortschritt" id="fortschritt" aria-label="Fortschritt">
+    <div class="fortschritt-text">
+      <span id="fortschritt-schritt">Schritt 1 von 4</span>
+      <span id="fortschritt-name">Profil</span>
+    </div>
+    <div class="fortschritt-balken" id="fortschritt-balken" role="progressbar"
+         aria-valuemin="1" aria-valuemax="4" aria-valuenow="1"
+         aria-valuetext="Schritt 1 von 4: Profil">
+      <div class="fortschritt-fuellung" id="fortschritt-fuellung"></div>
+    </div>
+    <ol class="fortschritt-segmente" id="fortschritt-segmente"></ol>
+  </nav>
 </header>
 
 <!-- Ausklappmenue statt Menueleiste: auf 390 px ist jede permanente
@@ -84,9 +108,9 @@
   <!-- derselben Woche eine Liste schreibt, will seine Personalnummer      -->
   <!-- nicht jedes Mal sehen.                                             -->
   <!-- ------------------------------------------------------------------ -->
-  <section class="block" id="profil-block">
+  <section class="block schritt" id="profil-block" data-schritt="1">
     <div class="block-kopf">
-      <h2>Profil</h2>
+      <h2 tabindex="-1">Profil</h2>
       <!-- Die Fehlermarkierungen sitzen an den Feldern, und die sind
            zugeklappt. Ohne diesen Zaehler bliebe eine fehlende Personalnummer
            unsichtbar, waehrend der Abschlussknopf gesperrt ist und niemand
@@ -162,8 +186,11 @@
   <!-- ------------------------------------------------------------------ -->
   <!-- Vorgang                                                            -->
   <!-- ------------------------------------------------------------------ -->
-  <section class="block">
-    <div class="block-kopf"><h2>Vorgang</h2></div>
+  <!-- Die Schritte 2 bis 4 starten versteckt: app.js zeigt beim Start den
+       gespeicherten Schritt. Staenden sie sichtbar da, saehe man bis dahin
+       kurz die alte lange Seite aufblitzen. -->
+  <section class="block schritt" id="vorgang-block" data-schritt="2" hidden>
+    <div class="block-kopf"><h2 tabindex="-1">Vorgang</h2></div>
     <div class="felder">
       <label class="feld">
         <span>Einsatzart</span>
@@ -183,9 +210,9 @@
   <!-- ------------------------------------------------------------------ -->
   <!-- Reisetage — das Herzstueck                                          -->
   <!-- ------------------------------------------------------------------ -->
-  <section class="block" id="reisetage">
+  <section class="block schritt" id="reisetage" data-schritt="3" hidden>
     <div class="block-kopf">
-      <h2>Reisetage</h2>
+      <h2 tabindex="-1">Reisetage</h2>
       <span class="zaehler" id="zeilen-zaehler">0 von 14</span>
     </div>
     <div id="zeilen-liste"></div>
@@ -203,8 +230,8 @@
   <!-- ------------------------------------------------------------------ -->
   <!-- Abschluss                                                          -->
   <!-- ------------------------------------------------------------------ -->
-  <section class="block" id="abschluss">
-    <div class="block-kopf"><h2>Abschluss</h2></div>
+  <section class="block schritt" id="abschluss" data-schritt="4" hidden>
+    <div class="block-kopf"><h2 tabindex="-1">Abschluss</h2></div>
 
     <div class="feld">
       <span class="feld-name">Datei</span>
@@ -300,9 +327,18 @@
 <!-- ---------------------------------------------------------------------- -->
 <!-- Aktionsleiste: genau eine farbige Schaltflaeche, wie im Design-Konzept. -->
 <!-- ---------------------------------------------------------------------- -->
+<!-- Auf den Seiten 1 bis 3 ist "Weiter" die eine farbige Schaltflaeche; auf
+     Seite 4 tritt der Abschlussknopf an seine Stelle. "Zurueck" bleibt auf
+     jeder Seite ein Zweitknopf. Auf den Sonderseiten (Einstellungen,
+     Selbsttest) ist die Knopfreihe ausgeblendet -- dort fuehrt "Fertig"
+     im Blockkopf zurueck. -->
 <footer class="aktionsleiste" id="aktionsleiste">
   <p class="leiste-meldung" id="leiste-meldung" role="status" aria-live="polite">Wird vorbereitet …</p>
-  <button type="button" class="knopf-haupt" id="knopf-abschluss" disabled>Excel erzeugen &amp; teilen</button>
+  <div class="leiste-knoepfe" id="leiste-knoepfe">
+    <button type="button" class="knopf-zweit" id="knopf-zurueck" disabled>Zurück</button>
+    <button type="button" class="knopf-haupt" id="knopf-weiter">Weiter</button>
+    <button type="button" class="knopf-haupt" id="knopf-abschluss" disabled hidden>Excel erzeugen &amp; teilen</button>
+  </div>
 </footer>
 
 <!-- Einmaliger Hinweis auf iOS, wie man die App auf den Home-Bildschirm holt -->

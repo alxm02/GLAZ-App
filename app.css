@@ -230,11 +230,7 @@ code {
   position: sticky;
   top: 0;
   z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
+  padding: 10px 16px 0;
   padding-top: calc(var(--sicher-oben) + 10px);
   background: var(--bg-tief);
   background: color-mix(in srgb, var(--bg-tief) 88%, transparent);
@@ -243,7 +239,99 @@ code {
   border-bottom: 1px solid var(--rand-zart);
 }
 
+.kopf-zeile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .kopf-titel { min-width: 0; }
+
+/* --------------------------------------------------------------------------
+   Fortschrittsleiste des Assistenten. Sie sitzt in der klebenden Kopfzeile,
+   weil sie dieselbe Frage beantwortet wie der Zeitraum daneben: Wo bin ich?
+   Drei Teile, von oben nach unten: die Zeile "Schritt 2 von 4 · Vorgang",
+   der durchgehende Balken (das ist die eigentliche Fortschrittsanzeige, mit
+   role=progressbar), und darunter die vier antippbaren Segmente mit Namen.
+   Der Balken fuellt sich mit dem Anteil des aktuellen Schritts an allen
+   Schritten -- auf Seite 4 steht er voll, denn dort kann die Datei entstehen.
+   -------------------------------------------------------------------------- */
+.fortschritt {
+  padding: 10px 0 8px;
+}
+.fortschritt-text {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-schwach);
+  font-variant-numeric: tabular-nums;
+}
+#fortschritt-name { color: var(--text-zweit); font-weight: 600; }
+
+.fortschritt-balken {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--rand-zart);
+  overflow: hidden;
+}
+.fortschritt-fuellung {
+  height: 100%;
+  width: 25%;
+  border-radius: 2px;
+  background: var(--akzent);
+}
+
+.fortschritt-segmente {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+}
+/* Jedes Segment ist ein Knopf: 34 px hoch wie die Textknoepfe im Blockkopf,
+   nicht die vollen 44 -- die Kopfzeile bleibt sonst nicht mehr "Zeile". Die
+   Tippflaeche ist trotzdem ehrlich, weil die Segmente die ganze Breite
+   unter sich aufteilen: bei 390 px sind das rund 85 x 34 px.
+   Bewusst ohne eigene Striche: Der Balken darueber zeigt den Fortschritt
+   schon, ein zweiter Satz Linien direkt darunter verdoppelte ihn nur. Die
+   Namen tragen den Zustand ueber Helligkeit und Gewicht. */
+.fortschritt-segmente button {
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 2px 2px;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-schwach);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-klein);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fortschritt-segmente button:active { background: var(--bg-sanft); }
+.fortschritt-segmente button[data-stand="fertig"] { color: var(--text-zweit); }
+.fortschritt-segmente button[data-stand="aktuell"] {
+  color: var(--text);
+  font-weight: 600;
+}
+/* Ein Schritt mit offenen Fehlern: roter Punkt hinter dem Namen. Kein roter
+   Balken -- Signalfarbe nur als Text und Rand, nie als Flaeche
+   (docs/Design-Konzept-v2.md). */
+.fortschritt-segmente button[data-fehler="true"]::after {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-left: 5px;
+  vertical-align: 1px;
+  border-radius: 50%;
+  background: var(--fehler);
+}
 .kopf-zeitraum {
   margin: 1px 0 0;
   font-size: var(--fs-xs);
@@ -350,6 +438,9 @@ main { padding: 0 16px; }
   border-bottom: 1px solid var(--rand-zart);
 }
 .block:last-of-type { border-bottom: 0; }
+/* Von den Schritten ist immer genau einer zu sehen -- eine Trennlinie unter
+   ihm haette nichts mehr zu trennen. */
+.schritt { border-bottom: 0; }
 
 .block-kopf {
   display: flex;
@@ -748,6 +839,26 @@ input[data-warnung="true"] { border-color: var(--warnung); }
 .leiste-meldung[data-schwere="erfolg"],
 .zusammenfassung[data-schwere="erfolg"] { color: var(--erfolg); }
 
+/* Zurueck und Weiter (bzw. Abschluss) nebeneinander. Zurueck bekommt nur so
+   viel Platz, wie sein Wort braucht; die farbige Schaltflaeche den Rest --
+   sie ist die, die man treffen soll. */
+.leiste-knoepfe {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+.leiste-knoepfe .knopf-zweit {
+  flex: none;
+  min-height: 52px;
+  padding: 0 18px;
+}
+.leiste-knoepfe .knopf-zweit:disabled {
+  color: var(--text-schwach);
+  opacity: 0.5;
+  cursor: default;
+}
+.leiste-knoepfe .knopf-haupt { flex: 1; }
+
 .knopf-haupt {
   width: 100%;
   min-height: 52px;
@@ -875,8 +986,13 @@ input[data-warnung="true"] { border-color: var(--warnung); }
     justify-content: space-between;
     gap: 20px;
   }
+  .leiste-knoepfe { flex: none; }
+  .leiste-knoepfe .knopf-haupt { flex: none; }
   .knopf-haupt { width: auto; min-width: 280px; }
   .leiste-platzhalter { height: 92px; }
+
+  .kopf { padding-left: 28px; padding-right: 28px; }
+  .kopf-zeile, .fortschritt { max-width: 824px; margin-left: auto; margin-right: auto; }
 }
 
 /* --------------------------------------------------------------------------
