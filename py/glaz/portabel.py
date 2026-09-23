@@ -431,8 +431,8 @@ def mailtexte(
     anbieten, noch bevor in den Einstellungen irgendetwas hinterlegt ist.
 
     Den Anhang haengt auf dem Handy die Nutzerin selbst an: Ein Browser darf
-    einem ``mailto:``-Link keine Datei mitgeben. Die erzeugte .xlsx wird
-    deshalb getrennt heruntergeladen.
+    einem ``ms-outlook:``- oder ``mailto:``-Aufruf keine Datei mitgeben. Die
+    erzeugte .xlsx wird deshalb getrennt heruntergeladen.
 
     :returns: ``{"an", "cc", "betreff", "body"}``
     :raises MailtextFehler: wenn eine selbst gesetzte Vorlage einen unbekannten

@@ -6,8 +6,8 @@ das Ansprechen des lokalen Mailprogramms (``sys.platform``, COM,
 ``subprocess``, Dateipfade). Nur das Erste laesst sich in Pyodide ausfuehren.
 
 Die Progressive Web App erzeugt denselben Text wie die Desktop-App und
-uebergibt ihn dem Handy als ``mailto:``-Link; den Anhang haengt dort die
-Nutzerin selbst an, weil ein Browser das nicht darf. Damit beide Wege
+uebergibt ihn der Outlook-App als ``ms-outlook://compose``-Aufruf; den Anhang
+haengt dort die Nutzerin selbst an, weil ein Browser das nicht darf. Damit beide Wege
 garantiert denselben Wortlaut liefern, gibt es diese Logik genau einmal --
 hier. :func:`glaz.mail.baue_mail` ergaenzt lediglich den Anhang.
 

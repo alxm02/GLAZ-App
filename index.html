@@ -256,8 +256,19 @@
 
     <label class="schalter">
       <input type="checkbox" id="f-mail-mitsenden" checked>
-      <span>Mail mitschicken (Teilen-Menü öffnen)</span>
+      <span>Mail mitschicken</span>
     </label>
+
+    <!-- Outlook zuerst: Es traegt An und CC selbst ein, das Teilen-Menue
+         nicht. Das Teilen-Menue bleibt fuer alle, die kein Outlook haben. -->
+    <div class="feld" id="versandweg">
+      <span class="feld-name">Mail über</span>
+      <div class="umschalter" role="radiogroup" aria-label="Mail über">
+        <button type="button" role="radio" aria-checked="true" data-versandweg="outlook">Outlook</button>
+        <button type="button" role="radio" aria-checked="false" data-versandweg="teilen">Teilen-Menü</button>
+      </div>
+      <p class="zusammenfassung" id="versandweg-hinweis"></p>
+    </div>
 
     <!-- Die Frage nach dem Speicherort kommt verlaesslich, und die Antwort ist
          nicht offensichtlich: Eine Webseite darf keinen Ordner auswaehlen --
@@ -266,10 +277,11 @@
          Ordnerauswahl. Deshalb steht es hier und nicht in einer Anleitung,
          die niemand liest. -->
     <p class="zusammenfassung">
-      <strong>Wohin die Datei geht:</strong> Das Teilen-Menü bietet neben den
-      Mail-Apps auch <em>„In Dateien sichern"</em> — dort wählst du den Ordner,
-      auch in OneDrive oder iCloud. Ohne Haken oben wird die Datei stattdessen
-      direkt in den Download-Ordner des Browsers gelegt.
+      <strong>Wohin die Datei geht:</strong> Beim Weg über Outlook und ohne
+      Haken oben landet sie im Download-Ordner des Browsers („Dateien“ →
+      „Downloads“). Das Teilen-Menü bietet stattdessen auch
+      <em>„In Dateien sichern"</em> — dort wählst du den Ordner, auch in
+      OneDrive oder iCloud.
     </p>
   </section>
 

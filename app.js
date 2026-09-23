@@ -181,6 +181,12 @@ const zustand = {
   zeilen: [],
   modus: "neu",
   mailMitsenden: true,
+  /* Wie die Mail das Telefon verlaesst: "outlook" oeffnet die Outlook-App mit
+     fertig eingetragenem An, CC, Betreff und Text; "teilen" gibt die Datei ans
+     Teilen-Menue. Outlook ist die Vorgabe, weil es genau das Tippen erspart,
+     das am Telefon am meisten stoert -- die Adressen. Den Anhang kann es
+     dafuer nicht mitnehmen (siehe versendeUeberOutlook). */
+  versandweg: "outlook",
   /* Aktuelle Seite des Assistenten (1 bis SCHRITTE.length). Wird mitgesichert,
      damit ein Neustart -- etwa weil iOS die App im Hintergrund beendet hat --
      dort weitergeht, wo man aufgehoert hat, und nicht wieder beim Profil. */
@@ -353,6 +359,9 @@ function laden() {
     }
     if (typeof gelesen.mailMitsenden === "boolean") {
       zustand.mailMitsenden = gelesen.mailMitsenden;
+    }
+    if (gelesen.versandweg === "outlook" || gelesen.versandweg === "teilen") {
+      zustand.versandweg = gelesen.versandweg;
     }
     if (Number.isInteger(gelesen.schritt)) {
       zustand.schritt = Math.min(Math.max(1, gelesen.schritt), SCHRITTE.length);
@@ -982,6 +991,8 @@ function setzeProfilHinweis(text, schwere = "") {
 }
 
 function nachEingabe() {
+  // Was jetzt noch geaendert wurde, steht nicht in der Datei in den Downloads.
+  verwerfeOutlookEntwurf();
   speichern();
   pruefeGleich();
 }
@@ -998,13 +1009,25 @@ async function abschluss() {
   const knopf = el("knopf-abschluss");
   knopf.disabled = true;
   knopf.dataset.laeuft = "true";
-  const beschriftungVorher = knopf.textContent;
   knopf.textContent = "Wird erzeugt …";
 
   try {
     const roh = JSON.stringify(vorgangDict());
     let ergebnis;
     let pfad;
+
+    // Beim Weg ueber Outlook wird der Empfaenger vor dem Erzeugen geprueft:
+    // Ohne ihn waere das Einzige, was der Outlook-Weg dem Teilen-Menue voraus
+    // hat, leer -- und die Datei laege umsonst in den Downloads.
+    const ueberOutlook = zustand.mailMitsenden && zustand.versandweg === "outlook";
+    const texte = ueberOutlook ? mailtexte(roh) : null;
+    if (ueberOutlook && !texte.an.trim()) {
+      melde(
+        "Kein Empfänger hinterlegt. Trag ihn unter Menü → Einstellungen → Empfänger ein.",
+        "fehler"
+      );
+      return;
+    }
 
     if (zustand.modus === "neu") {
       // Der Zielpfad im virtuellen Dateisystem bestimmt, wie die Datei am Ende
@@ -1066,7 +1089,9 @@ async function abschluss() {
         : (zieldatei && zieldatei.name) || ergebnis.dateiname
           || "GLAZ-Korrekturbuchungsliste.xlsx";
 
-    if (zustand.mailMitsenden) {
+    if (ueberOutlook) {
+      versendeUeberOutlook(blob, dateiname, texte);
+    } else if (zustand.mailMitsenden) {
       await teileDatei(blob, dateiname, roh);
     } else {
       speichereDatei(blob, dateiname);
@@ -1075,7 +1100,9 @@ async function abschluss() {
   } catch (e) {
     melde(`Es hat nicht geklappt: ${e && e.message ? e.message : e}`, "fehler");
   } finally {
-    knopf.textContent = beschriftungVorher;
+    // Nicht einfach die alte Beschriftung zurueck: Nach dem Outlook-Weg heisst
+    // der Knopf jetzt "In Outlook öffnen" (siehe aktualisiereKnopftext).
+    aktualisiereKnopftext();
     delete knopf.dataset.laeuft;
     // Die Pruefung stellt den Knopf wieder scharf -- und schriebe dabei
     // "Alles vollstaendig." ueber "Geteilt." Das Ergebnis des Laufs ist aber
@@ -1087,14 +1114,96 @@ async function abschluss() {
   }
 }
 
-async function teileDatei(blob, dateiname, roh) {
-  const texte = rufe(
+/** Adressen, Betreff und Text der Mail -- gefuellt von glaz/mailtext.py. */
+function mailtexte(roh) {
+  return rufe(
     "bruecke_mailtexte",
     roh,
     zustand.einstellungen.empfaenger || "",
     zustand.einstellungen.betreff_vorlage || "",
     zustand.einstellungen.body_vorlage || ""
   );
+}
+
+/* Der vorbereitete Outlook-Aufruf des letzten Laufs, oder null. Er lebt
+   bewusst ausserhalb von `zustand`: Er gehoert zu genau der Datei, die gerade
+   in den Downloads liegt, und wird mit der naechsten Eingabe wertlos. */
+let outlookEntwurf = null;
+
+/**
+ * Baut den Aufruf, mit dem die Outlook-App eine neue Mail oeffnet.
+ *
+ * Das Schema ist Microsofts dokumentierter Einstieg fuer Outlook auf iOS und
+ * Android. Es fuellt An, CC, Betreff und Text vor -- einen Anhang kennt es
+ * nicht, und eine Webseite hat auch keinen anderen Weg, Outlook eine Datei
+ * UND Adressen zugleich zu geben: Das Teilen-Menue reicht die Datei weiter,
+ * aber keine Adressen. Deshalb bleibt ein Handgriff, die Bueroklammer.
+ */
+function outlookAdresse(texte) {
+  const teile = [["to", texte.an]];
+  if (texte.cc) teile.push(["cc", texte.cc]);
+  teile.push(["subject", texte.betreff], ["body", texte.body]);
+  return "ms-outlook://compose?" + teile
+    .map(([schluessel, wert]) => `${schluessel}=${encodeURIComponent(wert)}`)
+    .join("&");
+}
+
+/**
+ * Legt die Datei in die Downloads und stellt den Outlook-Aufruf bereit.
+ *
+ * Outlook oeffnet erst der naechste Tipp auf den Abschlussknopf, nicht dieser
+ * Lauf. Zwei Gruende: iOS laesst eine Seite eine andere App nur aus einer
+ * frischen Fingergeste heraus oeffnen, und die ist nach dem Erzeugen der
+ * Datei verbraucht. Und die Datei muss in den Downloads liegen, BEVOR man in
+ * Outlook zur Bueroklammer greift.
+ */
+function versendeUeberOutlook(blob, dateiname, texte) {
+  speichereDatei(blob, dateiname);
+  outlookEntwurf = { adresse: outlookAdresse(texte), dateiname };
+  melde(
+    `${dateiname} liegt in den Downloads. Jetzt „In Outlook öffnen“ tippen — ` +
+    "An, CC, Betreff und Text stehen dort schon drin.",
+    "erfolg"
+  );
+}
+
+function oeffneOutlook() {
+  if (!outlookEntwurf) return;
+  const { adresse, dateiname } = outlookEntwurf;
+
+  // Ob Outlook aufgegangen ist, verraet nur, ob die Seite in den Hintergrund
+  // geht. Bleibt sie sichtbar, fehlt vermutlich die App -- oder iOS wartet
+  // noch auf "Öffnen", daher die vorsichtige Formulierung.
+  let verlassen = false;
+  const merke = () => { if (document.hidden) verlassen = true; };
+  document.addEventListener("visibilitychange", merke);
+  setTimeout(() => {
+    document.removeEventListener("visibilitychange", merke);
+    if (!verlassen && outlookEntwurf) {
+      melde(
+        "Outlook ist nicht aufgegangen? Dann fehlt die Outlook-App — " +
+        "unter „Mail über“ lässt sich das Teilen-Menü wählen.",
+        "warnung"
+      );
+    }
+  }, 4000);
+
+  melde(
+    `In Outlook ${dateiname} über die Büroklammer aus „Downloads“ anhängen.`,
+    "erfolg"
+  );
+  window.location.href = adresse;
+}
+
+/** Vergisst den vorbereiteten Outlook-Aufruf -- die Datei ist veraltet. */
+function verwerfeOutlookEntwurf() {
+  if (!outlookEntwurf) return;
+  outlookEntwurf = null;
+  aktualisiereKnopftext();
+}
+
+async function teileDatei(blob, dateiname, roh) {
+  const texte = mailtexte(roh);
 
   const datei = new File([blob], dateiname, { type: XLSX_TYP });
 
@@ -1588,11 +1697,28 @@ function verdrahte() {
 
   el("f-mail-mitsenden").addEventListener("change", (e) => {
     zustand.mailMitsenden = e.target.checked;
+    outlookEntwurf = null;
+    zeichneVersandweg();
     aktualisiereKnopftext();
     speichern();
   });
 
-  el("knopf-abschluss").addEventListener("click", abschluss);
+  alle("[data-versandweg]").forEach((knopf) =>
+    knopf.addEventListener("click", () => {
+      zustand.versandweg = knopf.dataset.versandweg;
+      outlookEntwurf = null;
+      zeichneVersandweg();
+      aktualisiereKnopftext();
+      speichern();
+    })
+  );
+
+  // Derselbe Knopf in zwei Rollen: erst erzeugen, dann Outlook oeffnen. Ein
+  // zweiter farbiger Knopf daneben braeche die Regel "genau eine farbige
+  // Schaltflaeche" der Aktionsleiste.
+  el("knopf-abschluss").addEventListener("click", () =>
+    outlookEntwurf ? oeffneOutlook() : abschluss()
+  );
 
   // --- Assistent: blaettern
   el("knopf-zurueck").addEventListener("click", () =>
@@ -1717,14 +1843,31 @@ function verdrahte() {
 
 function aktualisiereKnopftext() {
   const knopf = el("knopf-abschluss");
-  const teilen = zustand.mailMitsenden;
-  if (zustand.modus === "ergaenzen") {
-    knopf.textContent = teilen ? "Datei ergänzen & teilen" : "Datei ergänzen";
-  } else if (zustand.modus === "nur_versenden") {
-    knopf.textContent = teilen ? "Datei teilen" : "Datei sichern";
-  } else {
-    knopf.textContent = teilen ? "Excel erzeugen & teilen" : "Excel erzeugen";
+  if (outlookEntwurf) {
+    knopf.textContent = "In Outlook öffnen";
+    return;
   }
+  const mail = zustand.mailMitsenden;
+  const wort = zustand.versandweg === "outlook" ? "senden" : "teilen";
+  if (zustand.modus === "ergaenzen") {
+    knopf.textContent = mail ? `Datei ergänzen & ${wort}` : "Datei ergänzen";
+  } else if (zustand.modus === "nur_versenden") {
+    knopf.textContent = mail ? `Datei ${wort}` : "Datei sichern";
+  } else {
+    knopf.textContent = mail ? `Excel erzeugen & ${wort}` : "Excel erzeugen";
+  }
+}
+
+function zeichneVersandweg() {
+  el("versandweg").hidden = !zustand.mailMitsenden;
+  alle("[data-versandweg]").forEach((k) =>
+    k.setAttribute("aria-checked", String(k.dataset.versandweg === zustand.versandweg))
+  );
+  el("versandweg-hinweis").textContent =
+    zustand.versandweg === "outlook"
+      ? "Öffnet Outlook mit Empfänger, CC (Gruppenleitung), Betreff und Text. " +
+        "Die Datei liegt dann in „Downloads“ und kommt über die Büroklammer dazu."
+      : "Öffnet das Teilen-Menü mit der Datei. Dort Mail-App, Empfänger und CC selbst wählen.";
 }
 
 /* --------------------------------------------------------------------------
@@ -1762,6 +1905,7 @@ function start() {
 
   el("f-einsatzart").value = zustand.einsatzart;
   el("f-mail-mitsenden").checked = zustand.mailMitsenden;
+  zeichneVersandweg();
 
   melde("Der Rechenkern startet …");
   registriereServiceWorker();

@@ -18,4 +18,5 @@ Excel-Datei laufen als Python (via Pyodide) im Gerät.
 
 Es gibt keinen Server. Profile, erfasste Zeiten und Einstellungen liegen
 im `localStorage` des jeweiligen Geräts und verlassen es nicht. Die
-fertige Datei geht über das Teilen-Menü des Telefons an die Mail-App.
+fertige Datei geht über die Outlook-App (Empfänger und CC vorbelegt)
+oder über das Teilen-Menü des Telefons an die Mail-App.
