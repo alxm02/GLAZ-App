@@ -9,6 +9,8 @@ Windows-Geraetenamen in :func:`slugify`.
 from __future__ import annotations
 
 import re
+import string
+import unicodedata
 from pathlib import Path
 
 from .model import Vorgang
@@ -19,6 +21,14 @@ DEFAULT_SCHEMA = "{datum}_GLAZ-Korrektur_{nachname}_{einsatzart}.xlsx"
 _UMLAUT_MAP = {
     "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
     "Ä": "Ae", "Ö": "Oe", "Ü": "Ue",
+}
+
+#: Buchstaben, die NFKD nicht in Grundbuchstabe + Akzent zerlegt -- sie waeren
+#: sonst ersatzlos verschwunden ("Łukasz" -> "ukasz").
+_SONDER_MAP = {
+    "Ł": "L", "ł": "l", "Ø": "O", "ø": "o", "Đ": "D", "đ": "d",
+    "Æ": "Ae", "æ": "ae", "Œ": "Oe", "œ": "oe", "Þ": "Th", "þ": "th",
+    "ı": "i",
 }
 
 #: Unter Windows reservierte Geraetenamen -- als Dateiname (ohne Endung) unzulaessig.
@@ -40,6 +50,27 @@ _PLATZHALTER = ("datum", "nachname", "einsatzart")
 _VERBOTENE_ZEICHEN_RE = re.compile(r'[<>:"|?*\x00-\x1f]')
 
 
+def pruefe_nur_einfache_platzhalter(vorlage: str, was: str, erlaubt: str) -> None:
+    """Lehnt Platzhalter mit Attribut- oder Indexzugriff ab.
+
+    ``str.format`` wertet ``{datum.year}`` oder ``{name.upper}`` aus. Das
+    erste endet in einem rohen ``AttributeError``, das zweite schreibt
+    ``<built-in method upper ...>`` in Dateinamen oder Mail. Erlaubt sind nur
+    die schlichten Namen.
+
+    :raises ValueError: mit einer Meldung, die die erlaubten Platzhalter nennt.
+    """
+    try:
+        felder = [feld for _, feld, _, _ in string.Formatter().parse(vorlage) if feld]
+    except ValueError as exc:
+        raise ValueError(f"{was} ist ungueltig formatiert ({exc}). Erlaubt sind: {erlaubt}.") from exc
+    for feld in felder:
+        if "." in feld or "[" in feld:
+            raise ValueError(
+                f"{was} enthaelt den Platzhalter '{{{feld}}}'. Erlaubt sind nur: {erlaubt}."
+            )
+
+
 def slugify(text: str) -> str:
     """Wandelt beliebigen Text in ein dateisystemsicheres Fragment.
 
@@ -50,6 +81,14 @@ def slugify(text: str) -> str:
     """
     for umlaut, ersatz in _UMLAUT_MAP.items():
         text = text.replace(umlaut, ersatz)
+    for zeichen, ersatz in _SONDER_MAP.items():
+        text = text.replace(zeichen, ersatz)
+    # Uebrige Akzente abstreifen: "Çelik" -> "Celik", "Dvořák" -> "Dvorak".
+    # Die deutschen Umlaute sind oben schon ersetzt -- sie sollen "ae" werden,
+    # nicht "a".
+    text = "".join(
+        z for z in unicodedata.normalize("NFKD", text) if not unicodedata.combining(z)
+    )
 
     text = re.sub(r"[^A-Za-z0-9-]+", "-", text)
     text = re.sub(r"-{2,}", "-", text)
@@ -106,6 +145,7 @@ def baue_dateinamen(vorgang: Vorgang, schema: str = DEFAULT_SCHEMA) -> str:
         )
 
     erlaubt = ", ".join("{%s}" % p for p in _PLATZHALTER)
+    pruefe_nur_einfache_platzhalter(schema, f"Das Dateinamen-Schema", erlaubt)
     try:
         name = schema.format(
             datum=erster_tag.strftime("%Y-%m-%d"),

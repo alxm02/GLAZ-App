@@ -18,6 +18,9 @@ Start zum Absturz bringen.
 
 from __future__ import annotations
 
+import re
+import string
+
 from .model import Vorgang
 
 
@@ -74,6 +77,24 @@ def _platzhalter_werte(vorgang: Vorgang) -> dict[str, str]:
     }
 
 
+#: Was vor einem leeren ``{zeitraum}`` wegfallen soll: ein Gedankenstrich
+#: ("… – {zeitraum}") oder eine Praeposition ("vom {zeitraum}").
+_LEERER_ZEITRAUM_RE = re.compile(r"\s*(?:[–—-]|\bvom\b|\bvon\b|\bam\b|\bfür\b)?\s*\{zeitraum\}")
+
+
+def _ohne_leeren_zeitraum(vorlage: str, werte: dict[str, str]) -> str:
+    """Nimmt ``{zeitraum}`` samt Einleitung heraus, wenn es keinen gibt.
+
+    Im Modus "Nur versenden" darf das Formular ohne Reisetage abgeschickt
+    werden -- die Daten stehen dann in der Datei. Stuende ``{zeitraum}``
+    trotzdem in der Vorlage, hiesse der Betreff "… – Max Muster – " und der
+    Text "Dienstreise (Messe) vom .".
+    """
+    if werte.get("zeitraum"):
+        return vorlage
+    return _LEERER_ZEITRAUM_RE.sub("", vorlage)
+
+
 def _fuelle_vorlage(vorlage: str, werte: dict[str, str]) -> str:
     """Fuellt Platzhalter wie ``{name}`` in ``vorlage`` mit ``werte``.
 
@@ -81,6 +102,20 @@ def _fuelle_vorlage(vorlage: str, werte: dict[str, str]) -> str:
     der Anwenderin geaendert) fuehrt zu einem :class:`MailtextFehler` statt zu
     einem rohen ``KeyError``/``ValueError``.
     """
+    # Nur schlichte Platzhalter: "{name.upper}" wuerde sonst still
+    # "<built-in method upper ...>" in die Mail schreiben, "{zeitraum.x}" roh
+    # mit AttributeError scheitern.
+    try:
+        felder = [feld for _, feld, _, _ in string.Formatter().parse(vorlage) if feld]
+    except ValueError as exc:
+        raise MailtextFehler(f"Die Vorlage ist ungueltig formatiert: {exc}") from exc
+    for feld in felder:
+        if "." in feld or "[" in feld:
+            raise MailtextFehler(
+                f"Die Vorlage enthaelt den Platzhalter '{{{feld}}}'. Erlaubt sind "
+                f"nur: {', '.join(f'{{{k}}}' for k in werte)}."
+            )
+    vorlage = _ohne_leeren_zeitraum(vorlage, werte)
     try:
         return vorlage.format(**werte)
     except KeyError as exc:

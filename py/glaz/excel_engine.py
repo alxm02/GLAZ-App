@@ -13,9 +13,10 @@ bleiben -- die farbige Kennzeichnung der Eingabefelder steckt in den Zellformate
 
 from __future__ import annotations
 
+import os
 import re
-import shutil
 import zipfile
+import zlib
 from dataclasses import dataclass
 from datetime import date, time
 from pathlib import Path
@@ -288,9 +289,19 @@ def _lies_paket(datei: Path, bezeichnung: str) -> tuple[list[zipfile.ZipInfo], d
         with zipfile.ZipFile(datei, "r") as src:
             infos = src.infolist()
             parts = {info.filename: src.read(info.filename) for info in infos}
-    except zipfile.BadZipFile as exc:
+    except (zipfile.BadZipFile, zlib.error, KeyError, EOFError) as exc:
+        # Nicht nur ein fehlendes Zip-Verzeichnis: Auch ein beschaedigter
+        # Datenstrom (zlib.error) oder ein abgeschnittenes Paket muessen als
+        # ExcelEngineError ankommen. Die Aufrufer -- auch die laufende Pruefung
+        # der Web-App -- fangen nur diesen, alles andere schluege roh durch.
         raise ExcelEngineError(
             f"{bezeichnung} ist keine gueltige Excel-Datei: {datei}"
+        ) from exc
+    except OSError as exc:
+        # Keine Leserechte, eine nicht synchronisierte OneDrive-Datei, ein
+        # getrenntes Netzlaufwerk.
+        raise ExcelEngineError(
+            f"{bezeichnung} laesst sich nicht lesen: {datei} ({exc})"
         ) from exc
 
     for pflicht in (SHEET_PART, SHARED_PART):
@@ -345,7 +356,12 @@ def _schreibe_paket(target: Path, infos: list[zipfile.ZipInfo], parts: dict[str,
                 new_info.internal_attr = info.internal_attr
                 new_info.create_system = info.create_system
                 dst.writestr(new_info, parts[info.filename])
-        shutil.move(str(tmp), str(target))
+        # os.replace statt shutil.move: Unter Windows scheitert os.rename an
+        # einem vorhandenen Ziel, shutil.move faellt dann auf copy2 zurueck --
+        # und das kuerzt die Zieldatei zuerst. Bricht die Kopie ab (Netzlaufwerk,
+        # voller Datentraeger), bliebe von einer ueber Wochen ergaenzten Liste
+        # ein Rumpf. os.replace tauscht in einem Schritt.
+        os.replace(tmp, target)
     except PermissionError as exc:
         tmp.unlink(missing_ok=True)
         raise ExcelEngineError(
