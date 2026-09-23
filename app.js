@@ -309,7 +309,15 @@ function vorgangDict() {
     einsatzart: zustand.einsatzart,
     reisetyp: zustand.reisetyp,
     wiederhole_stammdaten: zustand.wiederhole_stammdaten,
-    zeilen: zustand.zeilen.map((z) => ({ ...z })),
+    // Im Inland sind die Grenzfelder ausgeblendet. Ihre Werte bleiben im
+    // Zustand, damit ein Hin- und Zurueckschalten nichts verliert -- an die
+    // Pruefung gehen sie aber nicht: Sonst meldete sie einen Fehler an einem
+    // Feld, das man weder sieht noch leeren kann.
+    zeilen: zustand.zeilen.map((z) =>
+      zustand.reisetyp === "ausland"
+        ? { ...z }
+        : { ...z, grenz_anreise: null, grenz_rueckreise: null }
+    ),
   };
 }
 
@@ -338,7 +346,19 @@ function laden() {
     // Feld fuer Feld uebernehmen statt Object.assign: eine aeltere oder von
     // Hand verbogene Fassung soll nicht den ganzen Zustand vergiften.
     if (Array.isArray(gelesen.profile) && gelesen.profile.length) {
-      zustand.profile = gelesen.profile.map((p) => ({ ...LEERES_PROFIL, ...p }));
+      // Jedes Feld als Text: Ein null oder eine Zahl aus einer aelteren
+      // Fassung liesse sonst profilLabel() beim Start an .trim() scheitern --
+      // und die App bliebe leer.
+      zustand.profile = gelesen.profile
+        .filter((p) => p && typeof p === "object")
+        .map((p) => {
+          const profil = { ...LEERES_PROFIL };
+          for (const feld of Object.keys(LEERES_PROFIL)) {
+            if (p[feld] !== undefined && p[feld] !== null) profil[feld] = String(p[feld]);
+          }
+          return profil;
+        });
+      if (!zustand.profile.length) zustand.profile = [{ ...LEERES_PROFIL, name: "Mein Profil" }];
     }
     if (Number.isInteger(gelesen.aktivesProfil)) {
       zustand.aktivesProfil = Math.min(
@@ -347,15 +367,17 @@ function laden() {
       );
     }
     if (typeof gelesen.einsatzart === "string") zustand.einsatzart = gelesen.einsatzart;
-    if (Array.isArray(gelesen.einsatzarten)) zustand.einsatzarten = gelesen.einsatzarten;
+    if (Array.isArray(gelesen.einsatzarten)) {
+      zustand.einsatzarten = gelesen.einsatzarten.filter((a) => typeof a === "string");
+    }
     if (gelesen.reisetyp === "ausland" || gelesen.reisetyp === "inland") {
       zustand.reisetyp = gelesen.reisetyp;
     }
     if (Array.isArray(gelesen.zeilen)) {
-      zustand.zeilen = gelesen.zeilen.slice(0, MAX_ZEILEN).map((z) => ({
-        ...leereZeile(),
-        ...z,
-      }));
+      zustand.zeilen = gelesen.zeilen
+        .filter((z) => z && typeof z === "object")
+        .slice(0, MAX_ZEILEN)
+        .map((z) => ({ ...leereZeile(), ...z }));
     }
     if (typeof gelesen.mailMitsenden === "boolean") {
       zustand.mailMitsenden = gelesen.mailMitsenden;
@@ -376,7 +398,10 @@ function laden() {
         }));
     }
     if (gelesen.einstellungen && typeof gelesen.einstellungen === "object") {
-      Object.assign(zustand.einstellungen, gelesen.einstellungen);
+      for (const feld of ["empfaenger", "betreff_vorlage", "body_vorlage", "thema"]) {
+        const wert = gelesen.einstellungen[feld];
+        if (typeof wert === "string") zustand.einstellungen[feld] = wert;
+      }
       // Ein unbekannter Wert wuerde die Seite unlesbar machen, deshalb hier
       // und nicht erst beim Anwenden abfangen.
       if (zustand.einstellungen.thema !== "hell") zustand.einstellungen.thema = "dunkel";
@@ -418,6 +443,7 @@ async function starteKern() {
     kernBereit = true;
     setzeBereitschaft("bereit", "bereit");
     pruefeJetzt();
+    pruefeEinstellungen();
     // Erst jetzt ist bekannt, ob im Profil etwas fehlt.
     if (zustand.schritt === 1) klappeProfilAufWennUnvollstaendig();
   } catch (e) {
@@ -427,10 +453,26 @@ async function starteKern() {
   }
 }
 
+/**
+ * Macht aus einem Pyodide-Fehler die Meldung, die die Nutzerin lesen soll.
+ *
+ * e.message ist der komplette Python-Traceback. Die Fachmodule formulieren
+ * ihre Fehler bewusst deutsch und handlungsleitend (siehe MailtextFehler) --
+ * die stehen in der letzten Zeile, hinter "modul.Klasse: ".
+ */
+function pythonMeldung(e) {
+  const text = String(e && e.message ? e.message : e).trim();
+  const zeilen = text.split("\n").map((z) => z.trim()).filter(Boolean);
+  const letzte = zeilen[zeilen.length - 1] || text;
+  return letzte.replace(/^[\w.]+(Error|Fehler|Exception):\s*/, "");
+}
+
 function rufe(name, ...args) {
   const fn = py.globals.get(name);
   try {
     return JSON.parse(fn(...args));
+  } catch (e) {
+    throw new Error(pythonMeldung(e));
   } finally {
     // PyProxy-Objekte haelt der Browser sonst bis zum Neuladen fest.
     if (fn && typeof fn.destroy === "function") fn.destroy();
@@ -452,6 +494,11 @@ function zeichneZeilen() {
     knoten.dataset.folgezeile = String(!!zeile.ist_folgezeile);
 
     knoten.querySelector(".tag-nummer").textContent = String(index + 1);
+    // "Arbeitszeit von" gibt es vierzehnmal. Fuer VoiceOver bekommt jede
+    // Beschriftung der Karte ihren Reisetag vorangestellt.
+    alle("[aria-label]", knoten).forEach((f) => {
+      f.setAttribute("aria-label", `Reisetag ${index + 1}: ${f.getAttribute("aria-label")}`);
+    });
 
     const datum = knoten.querySelector(".tag-datum");
     datum.value = zeile.datum || "";
@@ -788,7 +835,66 @@ function zeichneEinstellungen() {
   el("f-empfaenger").value = zustand.einstellungen.empfaenger;
   el("f-betreff-vorlage").value = zustand.einstellungen.betreff_vorlage;
   el("f-body-vorlage").value = zustand.einstellungen.body_vorlage;
+  pruefeEinstellungen();
 }
+
+/* Dasselbe Muster wie EMAIL_MUSTER in web/gruppenleiter.js und EMAIL_RE in
+   glaz/model.py. Wer es dort aendert, aendert es auch hier. */
+const EMAIL_MUSTER = /^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/;
+
+/** Die Adressen eines Empfaengerfelds, das mehrere mit , oder ; trennen darf. */
+function adressenAus(text) {
+  return String(text || "").split(/[,;]/).map((a) => a.trim()).filter(Boolean);
+}
+
+function ungueltigeAdressen(text) {
+  return adressenAus(text).filter((a) => !EMAIL_MUSTER.test(a));
+}
+
+/**
+ * Prueft die Mail-Einstellungen, waehrend man sie tippt -- statt erst beim
+ * Senden. Ein unbekannter Platzhalter fiel bisher erst auf, nachdem die Datei
+ * schon erzeugt war.
+ *
+ * Nebenbei zeigt das leere Empfaengerfeld die Vorgabe als Platzhalter: Leer
+ * heisst "Vorgabe verwenden", und das soll man sehen.
+ */
+function pruefeEinstellungen() {
+  const hinweis = el("einstellungen-hinweis");
+  const zeige = (text, schwere) => {
+    hinweis.textContent = text;
+    if (schwere) hinweis.dataset.schwere = schwere;
+    else delete hinweis.dataset.schwere;
+  };
+
+  const falsch = ungueltigeAdressen(zustand.einstellungen.empfaenger);
+  el("f-empfaenger").toggleAttribute("aria-invalid", falsch.length > 0);
+  if (falsch.length) {
+    zeige(`„${falsch[0]}“ ist keine gültige E-Mail-Adresse.`, "fehler");
+    return;
+  }
+  if (!kernBereit) {
+    zeige("");
+    return;
+  }
+
+  let texte;
+  try {
+    texte = mailtexte(JSON.stringify(vorgangDict()));
+  } catch (e) {
+    zeige(e && e.message ? e.message : String(e), "fehler");
+    return;
+  }
+  const vorgabe = zustand.einstellungen.empfaenger.trim() ? "" : texte.an;
+  el("f-empfaenger").placeholder = vorgabe ? `Vorgabe: ${vorgabe}` : "name@firma.de";
+  if (!texte.an.trim()) {
+    zeige("Noch kein Empfänger — ohne ihn lässt sich nicht über Outlook senden.", "warnung");
+  } else {
+    zeige("");
+  }
+}
+
+const pruefeEinstellungenGleich = entprellt(pruefeEinstellungen, 250);
 
 /* --------------------------------------------------------------------------
    Pruefung
@@ -798,6 +904,9 @@ let letztePruefung = null;
 
 function melde(text, schwere = "") {
   const feld = el("leiste-meldung");
+  // Die Statuszeile ist aria-live. Dieselbe Meldung nach jedem Tastendruck
+  // neu zu setzen, liesse VoiceOver sie jedes Mal wieder vorlesen.
+  if (feld.textContent === text && (feld.dataset.schwere || "") === schwere) return;
   feld.textContent = text;
   if (schwere) feld.dataset.schwere = schwere;
   else delete feld.dataset.schwere;
@@ -945,7 +1054,10 @@ function zeigePruefung(erg) {
   const fehler = erg.issues.filter((i) => i.schwere === "fehler");
   const warnungen = erg.issues.filter((i) => i.schwere === "warnung");
   const knopf = el("knopf-abschluss");
-  knopf.disabled = !erg.absendbar;
+  // Waehrend eines Laufs bleibt der Knopf gesperrt, auch wenn eine
+  // nachlaufende Pruefung "absendbar" meldet -- sonst startete ein zweiter
+  // Tipp einen zweiten Anhang an dieselbe Datei.
+  knopf.disabled = !erg.absendbar || !!knopf.dataset.laeuft;
 
   if (fehler.length) {
     const erster = uebrige.find((i) => i.schwere === "fehler") || fehler[0];
@@ -1002,6 +1114,7 @@ function nachEingabe() {
    -------------------------------------------------------------------------- */
 
 async function abschluss() {
+  if (el("knopf-abschluss").dataset.laeuft) return;
   if (!kernBereit) {
     melde("Der Rechenkern ist noch nicht bereit.", "warnung");
     return;
@@ -1012,6 +1125,9 @@ async function abschluss() {
   knopf.textContent = "Wird erzeugt …";
 
   try {
+    // Eine noch ausstehende, entprellte Pruefung jetzt nachholen: Der
+    // Dateiname kommt aus ihr, und er soll zur letzten Eingabe passen.
+    pruefeJetzt();
     const roh = JSON.stringify(vorgangDict());
     let ergebnis;
     let pfad;
@@ -1024,6 +1140,14 @@ async function abschluss() {
     if (ueberOutlook && !texte.an.trim()) {
       melde(
         "Kein Empfänger hinterlegt. Trag ihn unter Menü → Einstellungen → Empfänger ein.",
+        "fehler"
+      );
+      return;
+    }
+    const falsch = ueberOutlook ? ungueltigeAdressen(texte.an) : [];
+    if (falsch.length) {
+      melde(
+        `Der Empfänger „${falsch[0]}“ ist keine gültige E-Mail-Adresse (Menü → Einstellungen).`,
         "fehler"
       );
       return;
@@ -1045,7 +1169,11 @@ async function abschluss() {
         melde("Wähle zuerst die vorhandene Liste aus.", "fehler");
         return;
       }
-      pfad = "/ziel.xlsx";
+      // Eine Arbeitskopie statt /ziel.xlsx: bruecke_ergaenze schreibt in die
+      // Datei, die es bekommt. Laege der neue Block danach in /ziel.xlsx,
+      // zaehlte die laufende Pruefung ihn als belegt mit -- und sperrte den
+      // Knopf genau fuer den Korrekturlauf, fuer den letzterAnhang da ist.
+      pfad = "/arbeit.xlsx";
       py.FS.writeFile(pfad, new Uint8Array(await zieldatei.arrayBuffer()));
 
       const zielpruefung = rufe("bruecke_pruefe_ziel", roh, pfad, zustand.modus);
@@ -1197,15 +1325,33 @@ function oeffneOutlook() {
 
 /** Vergisst den vorbereiteten Outlook-Aufruf -- die Datei ist veraltet. */
 function verwerfeOutlookEntwurf() {
-  if (!outlookEntwurf) return;
+  if (!outlookEntwurf && !teilenEntwurf) return;
   outlookEntwurf = null;
+  teilenEntwurf = null;
   aktualisiereKnopftext();
 }
 
+/* Die fertige Datei, falls iOS das Teilen-Menue nach dem Erzeugen verweigert
+   hat (NotAllowedError: die Fingergeste war verbraucht). Der naechste Tipp
+   auf den Abschlussknopf oeffnet es dann mit frischer Geste. */
+let teilenEntwurf = null;
+
 async function teileDatei(blob, dateiname, roh) {
   const texte = mailtexte(roh);
-
   const datei = new File([blob], dateiname, { type: XLSX_TYP });
+  await teile(blob, datei, texte);
+}
+
+async function teileErneut() {
+  if (!teilenEntwurf) return;
+  const { blob, datei, texte } = teilenEntwurf;
+  teilenEntwurf = null;
+  aktualisiereKnopftext();
+  await teile(blob, datei, texte);
+}
+
+async function teile(blob, datei, texte) {
+  const dateiname = datei.name;
 
   // Zuerst in die Zwischenablage, dann teilen — und zwar in dieser
   // Reihenfolge. Safari erlaubt den Zugriff auf die Zwischenablage nur,
@@ -1230,6 +1376,14 @@ async function teileDatei(blob, dateiname, roh) {
       // Ein Abbruch durch den Nutzer ist kein Fehler.
       if (e && e.name === "AbortError") {
         melde("Teilen abgebrochen. Die Datei ist erzeugt.", "warnung");
+        return;
+      }
+      // Das Geraet kann teilen, nur nicht mehr aus diesem Tipp heraus: Das
+      // Erzeugen hat zu lange gedauert. Kein Grund fuer "kann nicht teilen".
+      if (e && e.name === "NotAllowedError") {
+        teilenEntwurf = { blob, datei, texte };
+        aktualisiereKnopftext();
+        melde(`${dateiname} ist fertig. Tippe auf „Teilen-Menü öffnen“.`, "erfolg");
         return;
       }
     }
@@ -1480,16 +1634,48 @@ function registriereServiceWorker() {
     return;
   }
   navigator.serviceWorker.register("sw.js").then(
-    () => zeigeFassung(),
+    (registrierung) => {
+      zeigeFassung();
+      // Die Meldung "neue-version" geht verloren, wenn die neue Fassung
+      // geladen wurde, waehrend die App nicht offen war. Ein wartender Worker
+      // verraet es trotzdem.
+      if (registrierung.waiting && navigator.serviceWorker.controller) {
+        zeigeUpdateHinweis();
+      }
+    },
     (e) => { el("menue-fuss").textContent = `Offline-Verwalter nicht aktiv: ${e.message}`; }
   );
 
   navigator.serviceWorker.addEventListener("message", (ereignis) => {
     const nachricht = ereignis.data || {};
-    if (nachricht.typ === "neue-version") {
-      melde("Eine neuere Fassung liegt bereit. Schließe die App und öffne sie erneut.", "warnung");
+    if (nachricht.typ === "neue-version") zeigeUpdateHinweis();
+  });
+
+  // Nur nach "Jetzt aktualisieren" neu laden -- nie ungefragt mitten in einer
+  // Eingabe (siehe sw.js, Kommentar vor meldeAllen).
+  let neuLaden = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (neuLaden) location.reload();
+  });
+  el("knopf-update").addEventListener("click", async () => {
+    const registrierung = await navigator.serviceWorker.getRegistration();
+    if (registrierung && registrierung.waiting) {
+      neuLaden = true;
+      registrierung.waiting.postMessage({ typ: "uebernehmen" });
+    } else {
+      location.reload();
     }
   });
+}
+
+/**
+ * Ein stehender Hinweis statt einer Zeile in der Statusleiste: Die schrieb
+ * die naechste Pruefung sofort wieder ueber, und die neue Fassung kam erst
+ * an, wenn iOS die App irgendwann ganz beendet hatte. Der Zwischenstand liegt
+ * im localStorage, ein Neuladen verliert also nichts.
+ */
+function zeigeUpdateHinweis() {
+  el("update-hinweis").hidden = false;
 }
 
 async function zeigeFassung() {
@@ -1675,6 +1861,15 @@ function verdrahte() {
       el("zieldatei-info").textContent = "Noch keine Datei gewählt.";
       return;
     }
+    if (!/\.xlsx$/i.test(zieldatei.name)) {
+      el("zieldatei-info").textContent =
+        `${zieldatei.name} ist keine Excel-Liste (.xlsx). Bitte die GLAZ-Liste wählen.`;
+      zieldatei = null;
+      zieldateiGeladen = false;
+      e.target.value = "";
+      nachEingabe();
+      return;
+    }
     el("zieldatei-info").textContent = `${zieldatei.name} wird gelesen …`;
     zieldateiGeladen = false;
     // Eine andere Datei heisst: Der gemerkte Block gilt nicht mehr. Ihn
@@ -1698,6 +1893,7 @@ function verdrahte() {
   el("f-mail-mitsenden").addEventListener("change", (e) => {
     zustand.mailMitsenden = e.target.checked;
     outlookEntwurf = null;
+    teilenEntwurf = null;
     zeichneVersandweg();
     aktualisiereKnopftext();
     speichern();
@@ -1707,6 +1903,7 @@ function verdrahte() {
     knopf.addEventListener("click", () => {
       zustand.versandweg = knopf.dataset.versandweg;
       outlookEntwurf = null;
+      teilenEntwurf = null;
       zeichneVersandweg();
       aktualisiereKnopftext();
       speichern();
@@ -1716,9 +1913,11 @@ function verdrahte() {
   // Derselbe Knopf in zwei Rollen: erst erzeugen, dann Outlook oeffnen. Ein
   // zweiter farbiger Knopf daneben braeche die Regel "genau eine farbige
   // Schaltflaeche" der Aktionsleiste.
-  el("knopf-abschluss").addEventListener("click", () =>
-    outlookEntwurf ? oeffneOutlook() : abschluss()
-  );
+  el("knopf-abschluss").addEventListener("click", () => {
+    if (outlookEntwurf) oeffneOutlook();
+    else if (teilenEntwurf) teileErneut();
+    else abschluss();
+  });
 
   // --- Assistent: blaettern
   el("knopf-zurueck").addEventListener("click", () =>
@@ -1740,6 +1939,19 @@ function verdrahte() {
     menue.hidden = !menue.hidden;
     el("knopf-menue").setAttribute("aria-expanded", String(!menue.hidden));
   });
+  const schliesseMenue = () => {
+    if (el("menue").hidden) return;
+    el("menue").hidden = true;
+    el("knopf-menue").setAttribute("aria-expanded", "false");
+  };
+  document.addEventListener("click", (e) => {
+    if (!el("menue").contains(e.target) && !el("knopf-menue").contains(e.target)) {
+      schliesseMenue();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") schliesseMenue();
+  });
 
   alle(".menue [data-ziel]").forEach((knopf) =>
     knopf.addEventListener("click", () => {
@@ -1755,6 +1967,11 @@ function verdrahte() {
         zustand.einsatzart = "";
         zustand.reisetyp = "inland";
         zieldatei = null;
+        zieldateiGeladen = false;
+        // Sonst ueberschriebe ein Ergaenzen derselben Datei die Zeilen der
+        // vorigen Reise statt die neue anzuhaengen.
+        letzterAnhang = null;
+        el("f-zieldatei").value = "";
         zustand.modus = "neu";
         el("f-einsatzart").value = "";
         el("zieldatei-info").textContent = "Noch keine Datei gewählt.";
@@ -1779,22 +1996,32 @@ function verdrahte() {
   );
 
   // --- Einstellungen
+  // Jede Aenderung verwirft einen vorbereiteten Outlook-Aufruf: Er traegt
+  // Adresse und Text von vorher.
+  const einstellungGeaendert = () => {
+    verwerfeOutlookEntwurf();
+    speichern();
+    pruefeEinstellungenGleich();
+  };
   el("f-empfaenger").addEventListener("input", (e) => {
     zustand.einstellungen.empfaenger = e.target.value;
-    speichern();
+    einstellungGeaendert();
   });
   el("f-betreff-vorlage").addEventListener("input", (e) => {
     zustand.einstellungen.betreff_vorlage = e.target.value;
-    speichern();
+    einstellungGeaendert();
   });
   el("f-body-vorlage").addEventListener("input", (e) => {
     zustand.einstellungen.body_vorlage = e.target.value;
-    speichern();
+    einstellungGeaendert();
   });
   el("knopf-vorlagen-zuruecksetzen").addEventListener("click", () => {
-    zustand.einstellungen = { empfaenger: "", betreff_vorlage: "", body_vorlage: "" };
+    if (!confirm("Empfänger, Betreff und Mailtext auf die Vorgaben zurücksetzen?")) return;
+    // Nur die drei Mailfelder -- das Erscheinungsbild gehoert nicht zu den
+    // Vorlagen und blieb bisher beim Zuruecksetzen auf der Strecke.
+    Object.assign(zustand.einstellungen, { empfaenger: "", betreff_vorlage: "", body_vorlage: "" });
     zeichneEinstellungen();
-    speichern();
+    einstellungGeaendert();
     melde("Die Vorlagen stehen wieder auf den Vorgabewerten.", "erfolg");
   });
   el("knopf-daten-loeschen").addEventListener("click", () => {
@@ -1845,6 +2072,10 @@ function aktualisiereKnopftext() {
   const knopf = el("knopf-abschluss");
   if (outlookEntwurf) {
     knopf.textContent = "In Outlook öffnen";
+    return;
+  }
+  if (teilenEntwurf) {
+    knopf.textContent = "Teilen-Menü öffnen";
     return;
   }
   const mail = zustand.mailMitsenden;

@@ -306,6 +306,7 @@
         <span>Mailtext</span>
         <textarea id="f-body-vorlage" rows="8"></textarea>
       </label>
+      <p class="zusammenfassung" id="einstellungen-hinweis" role="status"></p>
       <p class="zusammenfassung">Platzhalter: <code>{name}</code> <code>{zeitraum}</code> <code>{einsatzart}</code> <code>{personalnummer}</code> <code>{abteilung}</code></p>
       <div class="feld-aktionen">
         <button type="button" class="textknopf" id="knopf-vorlagen-zuruecksetzen">Vorlagen zurücksetzen</button>
@@ -354,6 +355,11 @@
 </footer>
 
 <!-- Einmaliger Hinweis auf iOS, wie man die App auf den Home-Bildschirm holt -->
+<div class="anstupser" id="update-hinweis" hidden>
+  <p><strong>Neue Fassung bereit.</strong> Deine Eingaben bleiben erhalten.</p>
+  <button type="button" class="textknopf" id="knopf-update">Jetzt aktualisieren</button>
+</div>
+
 <div class="anstupser" id="ios-anstupser" hidden>
   <p><strong>Auf den Home-Bildschirm legen.</strong> Erst dann arbeitet die App ohne Netz weiter und behält deine Daten.</p>
   <p class="anstupser-weg">Tippe unten auf <span class="teilen-symbol" aria-hidden="true"></span> <em>Teilen</em> und dann auf <em>Zum Home-Bildschirm</em>.</p>
