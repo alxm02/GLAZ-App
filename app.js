@@ -1649,6 +1649,9 @@ function registriereServiceWorker() {
   navigator.serviceWorker.addEventListener("message", (ereignis) => {
     const nachricht = ereignis.data || {};
     if (nachricht.typ === "neue-version") zeigeUpdateHinweis();
+    if (nachricht.typ === "version") {
+      el("menue-fuss").textContent = `Fassung ${nachricht.version} · offline verfügbar`;
+    }
   });
 
   // Nur nach "Jetzt aktualisieren" neu laden -- nie ungefragt mitten in einer
@@ -1679,6 +1682,14 @@ function zeigeUpdateHinweis() {
 }
 
 async function zeigeFassung() {
+  // Die laufende Fassung weiss nur der aktive Worker. version.json holt er
+  // aus dem Netz, sobald es eins gibt -- das waere die NEUE Nummer, waehrend
+  // noch der alte Code laeuft. Die Antwort kommt als Nachricht "version".
+  const aktiv = navigator.serviceWorker && navigator.serviceWorker.controller;
+  if (aktiv) {
+    aktiv.postMessage({ typ: "version-abfragen" });
+    return;
+  }
   try {
     const antwort = await fetch("version.json");
     const daten = await antwort.json();
