@@ -1350,3 +1350,13 @@ input[data-warnung="true"] { border-color: var(--warnung); }
   input, select, textarea { transition: border-color 140ms ease, box-shadow 140ms ease; }
   .schalter input::before { transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 120ms ease; }
 }
+
+/* Zwischenstaende: dieselbe Zeile wie in der Pruefliste, rechts zwei
+   leise Knoepfe. Der Punkt links sagt, ob der Stand schon versendet ist. */
+.zwischenstand-liste li { grid-template-columns: 22px 1fr auto; align-items: center; }
+.zwischenstand-liste li[data-stand="versendet"]::before { content: "✓"; color: var(--erfolg); }
+.zwischenstand-liste li[data-stand="offen"]::before { content: "•"; color: var(--akzent, var(--text)); }
+.zwischenstand-liste li[data-aktuell="true"] { outline: 1px solid var(--glas-licht-leise); }
+.zwischenstand-liste .zs-text b { display: block; color: var(--text); font-weight: 600; }
+.zwischenstand-liste .zs-text span { color: var(--text-zweit); }
+.zwischenstand-liste .zs-knoepfe { display: flex; gap: 4px; }

@@ -88,9 +88,10 @@
 <!-- Ausklappmenue statt Menueleiste: auf 390 px ist jede permanente
      Zweitnavigation verschenkte Hoehe. -->
 <div class="menue" id="menue" hidden>
+  <button type="button" data-ziel="zwischenstaende">Zwischenstände</button>
+  <button type="button" data-ziel="neuer-vorgang">Neuer Vorgang</button>
   <button type="button" data-ziel="einstellungen">Einstellungen</button>
   <button type="button" data-ziel="selbsttest">Selbsttest auf diesem Gerät</button>
-  <button type="button" data-ziel="neuer-vorgang">Neuer Vorgang</button>
   <div class="menue-thema">
     <span>Erscheinungsbild</span>
     <div class="umschalter" role="radiogroup" aria-label="Erscheinungsbild">
@@ -313,6 +314,24 @@
         <button type="button" class="textknopf textknopf-warnend" id="knopf-daten-loeschen">Alle Daten auf diesem Gerät löschen</button>
       </div>
     </div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Zwischenstaende: gesicherte Vorgaenge, die man spaeter weiterfuehrt. -->
+  <!-- Der laufende Stand wird ohnehin bei jeder Eingabe gesichert; hier   -->
+  <!-- liegen die, an denen gerade NICHT gearbeitet wird.                  -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="block" id="zwischenstaende" hidden>
+    <div class="block-kopf">
+      <h2>Zwischenstände</h2>
+      <button type="button" class="textknopf" data-schliessen="zwischenstaende">Fertig</button>
+    </div>
+    <p class="zusammenfassung">Deine Eingaben werden laufend gesichert. Hier liegen Vorgänge, die du beiseitegelegt hast — „Neuer Vorgang“ und „Laden“ legen den offenen Stand automatisch hier ab.</p>
+    <div class="feld-aktionen">
+      <button type="button" class="knopf-zweit" id="knopf-zwischenstand-sichern">Aktuellen Stand sichern</button>
+    </div>
+    <p class="zusammenfassung" id="zwischenstand-hinweis" role="status"></p>
+    <ul class="pruefliste zwischenstand-liste" id="zwischenstand-liste"></ul>
   </section>
 
   <!-- ------------------------------------------------------------------ -->

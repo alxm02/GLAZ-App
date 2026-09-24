@@ -122,7 +122,7 @@ const SCHRITTE = [
 
 /* Bereiche, die aus dem Menue heraus geoeffnet werden und nicht zum Ablauf
    gehoeren. Sie ersetzen den aktuellen Schritt, bis "Fertig" gedrueckt wird. */
-const SONDERSEITEN = ["einstellungen", "selbsttest"];
+const SONDERSEITEN = ["einstellungen", "selbsttest", "zwischenstaende"];
 
 //: Ruhetext unter den Profilfeldern. Er sagt, was ohnehin passiert -- und
 //: macht damit den Speichern-Knopf zu einer Bestaetigung statt zu einer
@@ -187,6 +187,13 @@ const zustand = {
      das am Telefon am meisten stoert -- die Adressen. Den Anhang kann es
      dafuer nicht mitnehmen (siehe versendeUeberOutlook). */
   versandweg: "outlook",
+  /* Beiseitegelegte Vorgaenge (siehe "Zwischenstaende" unten). Der laufende
+     Stand selbst steht wie bisher in einsatzart/zeilen/...; die Liste haelt
+     die, an denen gerade nicht gearbeitet wird. */
+  zwischenstaende: [],
+  /* Kennung des Eintrags, zu dem der laufende Stand gehoert -- oder null.
+     Sichern aktualisiert dann diesen Eintrag, statt einen zweiten anzulegen. */
+  zwischenstandId: null,
   /* Aktuelle Seite des Assistenten (1 bis SCHRITTE.length). Wird mitgesichert,
      damit ein Neustart -- etwa weil iOS die App im Hintergrund beendet hat --
      dort weitergeht, wo man aufgehoert hat, und nicht wieder beim Profil. */
@@ -384,6 +391,16 @@ function laden() {
     }
     if (gelesen.versandweg === "outlook" || gelesen.versandweg === "teilen") {
       zustand.versandweg = gelesen.versandweg;
+    }
+    if (Array.isArray(gelesen.zwischenstaende)) {
+      zustand.zwischenstaende = gelesen.zwischenstaende
+        .map(bereinigeZwischenstand)
+        .filter(Boolean)
+        .slice(0, MAX_ZWISCHENSTAENDE);
+    }
+    if (typeof gelesen.zwischenstandId === "string"
+        && zustand.zwischenstaende.some((e) => e.id === gelesen.zwischenstandId)) {
+      zustand.zwischenstandId = gelesen.zwischenstandId;
     }
     if (Number.isInteger(gelesen.schritt)) {
       zustand.schritt = Math.min(Math.max(1, gelesen.schritt), SCHRITTE.length);
@@ -902,6 +919,14 @@ const pruefeEinstellungenGleich = entprellt(pruefeEinstellungen, 250);
 
 let letztePruefung = null;
 
+let gehalteneMeldungBis = 0;
+
+/** Wie melde(), aber die naechsten Sekunden ueberschreibt die Pruefung nicht. */
+function meldeGehalten(text, schwere = "", ms = 5000) {
+  gehalteneMeldungBis = Date.now() + ms;
+  melde(text, schwere);
+}
+
 function melde(text, schwere = "") {
   const feld = el("leiste-meldung");
   // Die Statuszeile ist aria-live. Dieselbe Meldung nach jedem Tastendruck
@@ -1059,6 +1084,11 @@ function zeigePruefung(erg) {
   // Tipp einen zweiten Anhang an dieselbe Datei.
   knopf.disabled = !erg.absendbar || !!knopf.dataset.laeuft;
 
+  // Eine gerade gegebene Auskunft ("… geladen", "der vorige liegt unter
+  // Zwischenstaende") ein paar Sekunden stehen lassen. Offene Punkte zeigen
+  // die Felder selbst, und nach einem neuen Vorgang sind sie ohnehin erwartet.
+  if (Date.now() < gehalteneMeldungBis) return;
+
   if (fehler.length) {
     const erster = uebrige.find((i) => i.schwere === "fehler") || fehler[0];
     melde(
@@ -1099,6 +1129,218 @@ function setzeProfilHinweis(text, schwere = "") {
       () => setzeProfilHinweis(PROFIL_HINWEIS_STANDARD),
       6000
     );
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Zwischenstaende
+
+   Der laufende Stand wird ohnehin bei jeder Eingabe gesichert (speichern()).
+   Was fehlte, war ein Ort fuer Vorgaenge, an denen man gerade NICHT
+   arbeitet: "Neuer Vorgang" warf den offenen Stand bisher weg. Jetzt legt es
+   ihn hier ab, ebenso "Laden" eines anderen Stands. Ein Vorgang ist genau ein
+   Eintrag -- wer einen Stand laedt und weiterarbeitet, aktualisiert beim
+   naechsten Sichern denselben Eintrag, statt Duplikate anzuhaeufen.
+   -------------------------------------------------------------------------- */
+
+/* Genug fuer ein Vierteljahr Dienstreisen; aeltere fallen hinten heraus. */
+const MAX_ZWISCHENSTAENDE = 30;
+
+function neueZwischenstandId() {
+  return `zs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/** Nur die Teile, die einen Vorgang ausmachen -- das Profil gilt dauerhaft. */
+function aktuellerVorgangsinhalt() {
+  return {
+    einsatzart: zustand.einsatzart,
+    reisetyp: zustand.reisetyp,
+    modus: zustand.modus,
+    zeilen: zustand.zeilen.map((z) => ({ ...z })),
+  };
+}
+
+/** Wie hat_inhalt in glaz/session.py: das Datum zaehlt nicht, es ist vorbelegt. */
+function hatVorgangsinhalt(inhalt) {
+  return !!String(inhalt.einsatzart || "").trim()
+    || inhalt.zeilen.some((z) => ZEITFELDER.some((f) => z[f]));
+}
+
+function gleicherInhalt(a, b) {
+  const kern = (v) => JSON.stringify([v.einsatzart, v.reisetyp, v.modus, v.zeilen]);
+  return kern(a) === kern(b);
+}
+
+/** Haertet einen Eintrag aus dem localStorage -- wie laden() den Rest. */
+function bereinigeZwischenstand(e) {
+  if (!e || typeof e !== "object" || typeof e.id !== "string") return null;
+  const zeilen = Array.isArray(e.zeilen)
+    ? e.zeilen.filter((z) => z && typeof z === "object").slice(0, MAX_ZEILEN)
+      .map((z) => ({ ...leereZeile(), ...z }))
+    : [];
+  return {
+    id: e.id,
+    gesichert_am: typeof e.gesichert_am === "string" ? e.gesichert_am : "",
+    versendet_am: typeof e.versendet_am === "string" ? e.versendet_am : "",
+    einsatzart: typeof e.einsatzart === "string" ? e.einsatzart : "",
+    reisetyp: e.reisetyp === "ausland" ? "ausland" : "inland",
+    modus: ["neu", "ergaenzen", "nur_versenden"].includes(e.modus) ? e.modus : "neu",
+    zeilen: zeilen.length ? zeilen : [leereZeile()],
+  };
+}
+
+/**
+ * Legt den laufenden Stand in der Liste ab (oder aktualisiert seinen
+ * Eintrag). Liefert den Eintrag, oder null, wenn es nichts zu sichern gab.
+ *
+ * ``versendet`` markiert den Eintrag als verschickt. Aendert man danach noch
+ * etwas und sichert erneut, faellt die Markierung weg -- sie galt dem alten
+ * Inhalt.
+ */
+function sichereZwischenstand({ versendet = false } = {}) {
+  const inhalt = aktuellerVorgangsinhalt();
+  if (!hatVorgangsinhalt(inhalt)) return null;
+
+  const id = zustand.zwischenstandId || neueZwischenstandId();
+  const alt = zustand.zwischenstaende.find((e) => e.id === id);
+  const jetzt = new Date().toISOString();
+  const eintrag = {
+    id,
+    gesichert_am: jetzt,
+    versendet_am: versendet
+      ? jetzt
+      : (alt && alt.versendet_am && gleicherInhalt(alt, inhalt) ? alt.versendet_am : ""),
+    ...inhalt,
+  };
+  zustand.zwischenstaende = [eintrag]
+    .concat(zustand.zwischenstaende.filter((e) => e.id !== id))
+    .slice(0, MAX_ZWISCHENSTAENDE);
+  zustand.zwischenstandId = id;
+  speichern();
+  return eintrag;
+}
+
+/** Setzt einen Vorgangsinhalt ins Formular (Neuer Vorgang, Laden). */
+function setzeVorgang(inhalt, id) {
+  zustand.einsatzart = inhalt.einsatzart;
+  zustand.reisetyp = inhalt.reisetyp;
+  zustand.modus = inhalt.modus;
+  zustand.zeilen = inhalt.zeilen.map((z) => ({ ...z }));
+  zustand.zwischenstandId = id;
+  // Eine gewaehlte Zieldatei und der Merker des letzten Anhangs gehoeren
+  // zum vorigen Vorgang.
+  zieldatei = null;
+  zieldateiGeladen = false;
+  letzterAnhang = null;
+  el("f-zieldatei").value = "";
+  el("zieldatei-info").textContent = "Noch keine Datei gewählt.";
+  el("f-einsatzart").value = zustand.einsatzart;
+  zeichneUmschalter();
+  zeichneZeilen();
+  aktualisiereKnopftext();
+}
+
+function ladeZwischenstand(id) {
+  const eintrag = zustand.zwischenstaende.find((e) => e.id === id);
+  if (!eintrag) return;
+  // Der offene Stand geht nicht verloren: er wird vorher abgelegt.
+  const abgelegt = zustand.zwischenstandId !== id ? sichereZwischenstand() : null;
+  setzeVorgang(eintrag, id);
+  zeigeSchritt(eintrag.zeilen.length ? 3 : 2, { fokus: true });
+  nachEingabe();
+  meldeGehalten(
+    abgelegt
+      ? `„${zwischenstandTitel(eintrag)}“ geladen. Der vorige Stand liegt unter Zwischenstände.`
+      : `„${zwischenstandTitel(eintrag)}“ geladen.`,
+    "erfolg"
+  );
+}
+
+function loescheZwischenstand(id) {
+  const eintrag = zustand.zwischenstaende.find((e) => e.id === id);
+  if (!eintrag) return;
+  if (!confirm(`Zwischenstand „${zwischenstandTitel(eintrag)}“ löschen?`)) return;
+  zustand.zwischenstaende = zustand.zwischenstaende.filter((e) => e.id !== id);
+  // Der laufende Stand bleibt stehen; er gehoert nur keinem Eintrag mehr.
+  if (zustand.zwischenstandId === id) zustand.zwischenstandId = null;
+  speichern();
+  zeichneZwischenstaende();
+}
+
+function zwischenstandTitel(e) {
+  return String(e.einsatzart || "").trim() || "Ohne Einsatzart";
+}
+
+function kurzDatum(iso) {
+  const [j, m, t] = String(iso).split("-");
+  return t && m ? `${t}.${m}.${j}` : "";
+}
+
+/** "21.09.–23.09.2026 · 3 Reisetage" -- aus den Zeilen mit Zeiten. */
+function zwischenstandZeitraum(e) {
+  const aktive = e.zeilen.filter((z) => ZEITFELDER.some((f) => z[f]));
+  const daten = aktive.map((z) => z.datum).filter(Boolean).sort();
+  const teile = [];
+  if (daten.length) {
+    const von = kurzDatum(daten[0]);
+    const bis = kurzDatum(daten[daten.length - 1]);
+    teile.push(von === bis ? von : `${von.slice(0, 6)}–${bis}`);
+  }
+  teile.push(aktive.length === 1 ? "1 Reisetag" : `${aktive.length} Reisetage`);
+  return teile.join(" · ");
+}
+
+function zeitpunktText(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const zwei = (n) => String(n).padStart(2, "0");
+  return `${zwei(d.getDate())}.${zwei(d.getMonth() + 1)}. ${zwei(d.getHours())}:${zwei(d.getMinutes())}`;
+}
+
+function zeichneZwischenstaende() {
+  const liste = el("zwischenstand-liste");
+  liste.textContent = "";
+  const hinweis = el("zwischenstand-hinweis");
+  hinweis.textContent = zustand.zwischenstaende.length ? "" : "Noch keine Zwischenstände.";
+
+  for (const e of zustand.zwischenstaende) {
+    const punkt = document.createElement("li");
+    punkt.dataset.stand = e.versendet_am ? "versendet" : "offen";
+    const aktuell = e.id === zustand.zwischenstandId;
+    punkt.dataset.aktuell = String(aktuell);
+
+    const text = document.createElement("div");
+    text.className = "zs-text";
+    const titel = document.createElement("b");
+    titel.textContent = zwischenstandTitel(e) + (aktuell ? " (in Bearbeitung)" : "");
+    const zeile = document.createElement("span");
+    const wann = e.versendet_am
+      ? `versendet ${zeitpunktText(e.versendet_am)}`
+      : `gesichert ${zeitpunktText(e.gesichert_am)}`;
+    zeile.textContent = `${zwischenstandZeitraum(e)} · ${wann}`;
+    text.append(titel, zeile);
+
+    const knoepfe = document.createElement("div");
+    knoepfe.className = "zs-knoepfe";
+    if (!aktuell) {
+      const laden = document.createElement("button");
+      laden.type = "button";
+      laden.className = "textknopf";
+      laden.textContent = "Laden";
+      laden.setAttribute("aria-label", `${zwischenstandTitel(e)} laden`);
+      laden.addEventListener("click", () => ladeZwischenstand(e.id));
+      knoepfe.append(laden);
+    }
+    const weg = document.createElement("button");
+    weg.type = "button";
+    weg.className = "textknopf textknopf-warnend";
+    weg.textContent = "Löschen";
+    weg.setAttribute("aria-label", `${zwischenstandTitel(e)} löschen`);
+    weg.addEventListener("click", () => loescheZwischenstand(e.id));
+    knoepfe.append(weg);
+
+    punkt.append(text, knoepfe);
+    liste.append(punkt);
   }
 }
 
@@ -1320,6 +1562,9 @@ function oeffneOutlook() {
     `In Outlook ${dateiname} über die Büroklammer aus „Downloads“ anhängen.`,
     "erfolg"
   );
+  // Ab hier gilt der Vorgang als verschickt -- unter Zwischenstaende mit
+  // Haken, falls man ihn spaeter noch einmal braucht.
+  sichereZwischenstand({ versendet: true });
   window.location.href = adresse;
 }
 
@@ -1370,6 +1615,7 @@ async function teile(blob, datei, texte) {
         title: texte.betreff,
         text: texte.body,
       });
+      sichereZwischenstand({ versendet: true });
       melde(`Geteilt.${nachsatz}`, "erfolg");
       return;
     } catch (e) {
@@ -1970,31 +2216,26 @@ function verdrahte() {
       el("knopf-menue").setAttribute("aria-expanded", "false");
       const ziel = knopf.dataset.ziel;
       if (ziel === "neuer-vorgang") {
-        if (!confirm("Alle erfassten Reisetage verwerfen?")) return;
+        // Nichts geht verloren: Der offene Stand wird als Zwischenstand
+        // abgelegt, deshalb auch keine Rueckfrage mehr.
+        const abgelegt = sichereZwischenstand();
         // Genau das, was _neuer_vorgang in der Desktop-App zuruecksetzt:
         // Zeilen, Einsatzart und Reisetyp. Das Profil bleibt stehen -- es ist
         // der Teil, der ueber Vorgaenge hinweg gilt.
-        zustand.zeilen = [leereZeile()];
-        zustand.einsatzart = "";
-        zustand.reisetyp = "inland";
-        zieldatei = null;
-        zieldateiGeladen = false;
-        // Sonst ueberschriebe ein Ergaenzen derselben Datei die Zeilen der
-        // vorigen Reise statt die neue anzuhaengen.
-        letzterAnhang = null;
-        el("f-zieldatei").value = "";
-        zustand.modus = "neu";
-        el("f-einsatzart").value = "";
-        el("zieldatei-info").textContent = "Noch keine Datei gewählt.";
-        zeichneUmschalter();
-        zeichneZeilen();
-        aktualisiereKnopftext();
+        setzeVorgang(
+          { einsatzart: "", reisetyp: "inland", modus: "neu", zeilen: [leereZeile()] },
+          null
+        );
         // Auf Seite 2, nicht auf Seite 1: Das Profil bleibt ja stehen, der
         // neue Vorgang beginnt bei der Einsatzart.
         zeigeSchritt(2, { fokus: true });
         nachEingabe();
+        if (abgelegt) {
+          meldeGehalten("Neuer Vorgang. Der vorige liegt unter Menü → Zwischenstände.", "erfolg");
+        }
         return;
       }
+      if (ziel === "zwischenstaende") zeichneZwischenstaende();
       zeigeSonderseite(ziel);
     })
   );
@@ -2071,6 +2312,15 @@ function verdrahte() {
 
   // --- Selbsttest
   el("knopf-selbsttest-start").addEventListener("click", starteSelbsttest);
+
+  // --- Zwischenstaende
+  el("knopf-zwischenstand-sichern").addEventListener("click", () => {
+    const eintrag = sichereZwischenstand();
+    zeichneZwischenstaende();
+    el("zwischenstand-hinweis").textContent = eintrag
+      ? `„${zwischenstandTitel(eintrag)}“ gesichert.`
+      : "Noch nichts eingegeben — es gibt nichts zu sichern.";
+  });
 
   // --- Anstupser
   el("knopf-anstupser-weg").addEventListener("click", () => {
